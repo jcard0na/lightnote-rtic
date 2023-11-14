@@ -219,7 +219,7 @@ type SpiFlashMainType<'a> = SpiProxy<
 type SpiFlashWithCsType<'a> =
     Flash<SpiFlashMainType<'a>, PB6<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>>;
 
-pub(crate) struct SpiFlash<'a> {
+pub struct SpiFlash<'a> {
     flash: SpiFlashWithCsType<'a>,
     buffer: [u8; 1024],
 }

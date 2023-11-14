@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(type_alias_impl_trait)]
 
 use panic_rtt_target as _;
 
@@ -11,9 +12,11 @@ mod voltage;
 
 use stm32l0xx_hal as hal;
 
-#[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [])]
+#[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [SPI2])]
 mod app {
-    use crate::flash;
+
+    use crate::flash::SpiFlash;
+    use crate::config;
     use crate::hal::{
         delay::Delay,
         gpio::{
@@ -30,6 +33,8 @@ mod app {
     };
     use epd_waveshare::{epd1in54_v2::*, prelude::*};
     use hex_display::HexDisplayExt;
+    use rtic_sync::channel::Receiver;
+    use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprintln, rtt_init_print};
     use shared_bus::{BusManager, NullMutex, SpiProxy};
     use usb_device::{
@@ -51,13 +56,13 @@ mod app {
     type BusMgr = BusManager<BusMgrInner>;
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        flash: SpiFlash<'static>
+    }
 
     #[local]
     struct Local {
-        led_b: PA8<Output<PushPull>>,
-        usb_dev: UsbDevice<'static, UsbBus<USB>>,
-        webusb: WebUsb<UsbBus<USB>>,
+        delay: Delay,
         epd: Epd1in54<
             SpiProxy<'static, BusMgrInner>,
             PB2<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
@@ -66,8 +71,13 @@ mod app {
             PB0<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
             stm32l0xx_hal::delay::Delay,
         >,
+        led_b: PA8<Output<PushPull>>,
+        spi_epd: SpiProxy<'static, BusMgrInner>,
+        usb_dev: UsbDevice<'static, UsbBus<USB>>,
+        webusb: WebUsb<UsbBus<USB>>,
     }
 
+    const MSG_Q_CAPACITY: usize = 1;
     #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None, SPI_BUS: Option<BusMgr> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
         rtt_init_print!();
@@ -115,7 +125,8 @@ mod app {
         rprintln!("Setup EPD...");
         let mut epd =
             Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
-        let mut flash = flash::SpiFlash::new(spi_flash, cs_flash, &mut delay);
+        let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
+        let mut config = config::FlashConfig::from_flash(&mut flash);
 
         let webusb = WebUsb::new(
             usb_bus.as_ref().unwrap(),
@@ -129,37 +140,51 @@ mod app {
             .max_packet_size_0(64)
             .build();
 
+        let (s, r) = make_channel!(u32, MSG_Q_CAPACITY);
+        epd_handler::spawn(r).unwrap();
+
         (
-            Shared {},
+            Shared {
+                flash,
+            },
             Local {
+                delay,
+                epd,
                 led_b: gpioa.pa8.into_push_pull_output(),
-                usb_dev: usb_dev,
-                webusb: webusb,
-                epd: epd,
+                spi_epd,
+                usb_dev,
+                webusb,
             },
         )
     }
 
-    #[task(binds = USB, local = [usb_dev, webusb])]
+    #[task(priority = 0, local = [delay, epd, spi_epd])]
+    async fn epd_handler(cx: epd_handler::Context, mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>) {
+        rprintln!("epd_handler");
+        let epd = cx.local.epd;
+        let spi_epd = cx.local.spi_epd;
+        let delay = cx.local.delay;
+        epd.set_lut(spi_epd, delay, Some(RefreshLut::Full)).unwrap();
+        epd.clear_frame(spi_epd, delay).unwrap();
+        // epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
+        epd.display_frame(spi_epd, delay).unwrap();
+    }
+
+    // #[idle]
+    // fn idle_task(cx: idle_task::Context) -> ! {
+    //     rprintln!("idle");
+    //     loop {}
+    // }
+
+    #[task(binds = USB, local = [led_b, usb_dev, webusb])]
     fn usb_handler(cx: usb_handler::Context) {
         rprintln!("USB interrupt received.");
 
+        let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
+        led.toggle().ok();
+
         let usb_dev = cx.local.usb_dev;
         usb_dev.poll(&mut [cx.local.webusb]);
-    }
-
-    #[idle(local = [led_b])]
-    fn idle(cx: idle::Context) -> ! {
-        let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
-        led.set_high().ok();
-
-        //let mut dfu = DFUClass::new(&usb_bus, flash);
-
-        rprintln!("idle");
-        loop {
-            // Allow MCU to sleep between interrupts
-            //        rtic::export::wfi()
-        }
     }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
