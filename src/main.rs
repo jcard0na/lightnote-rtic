@@ -1,32 +1,54 @@
 #![no_std]
 #![no_main]
 
-// pick a panicking behavior
-use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
-// use panic_abort as _; // requires nightly
-// use panic_itm as _; // logs messages over ITM; requires ITM support
-// use panic_semihosting as _; // logs messages to the host stderr; requires a debugger
+use panic_rtt_target as _;
 
+mod config;
+mod errors;
+mod flash;
+mod nvm;
+mod voltage;
 
 use stm32l0xx_hal as hal;
 
 #[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [])]
 mod app {
-    use hex_display::HexDisplayExt;
-    use rtt_target::{rtt_init_print, rprintln};
-    use usb_device::{
-        prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
-        bus::UsbBusAllocator,
-    };
-    use usbd_webusb::{url_scheme, WebUsb};
+    use crate::flash;
     use crate::hal::{
-        gpio::{gpioa::PA8, Output, PushPull},
+        delay::Delay,
+        gpio::{
+            gpioa::PA8,
+            gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7},
+            Output, PushPull,
+        },
         prelude::*,
         rcc::Config,
         signature::device_id,
+        spi::{Spi, MODE_0},
         syscfg::SYSCFG,
-        usb::{USB, UsbBus}
+        usb::{UsbBus, USB},
     };
+    use epd_waveshare::{epd1in54_v2::*, prelude::*};
+    use hex_display::HexDisplayExt;
+    use rtt_target::{rprintln, rtt_init_print};
+    use shared_bus::{BusManager, NullMutex, SpiProxy};
+    use usb_device::{
+        bus::UsbBusAllocator,
+        prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
+    };
+    use usbd_webusb::{url_scheme, WebUsb};
+
+    type BusMgrInner = NullMutex<
+        Spi<
+            stm32l0xx_hal::pac::SPI1,
+            (
+                PB3<stm32l0xx_hal::gpio::Analog>,
+                PB4<stm32l0xx_hal::gpio::Analog>,
+                PB5<stm32l0xx_hal::gpio::Analog>,
+            ),
+        >,
+    >;
+    type BusMgr = BusManager<BusMgrInner>;
 
     #[shared]
     struct Shared {}
@@ -35,26 +57,66 @@ mod app {
     struct Local {
         led_b: PA8<Output<PushPull>>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
-        webusb: WebUsb<UsbBus<USB>>
+        webusb: WebUsb<UsbBus<USB>>,
+        epd: Epd1in54<
+            SpiProxy<'static, BusMgrInner>,
+            PB2<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
+            PB7<stm32l0xx_hal::gpio::Input<stm32l0xx_hal::gpio::Floating>>,
+            PB1<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
+            PB0<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
+            stm32l0xx_hal::delay::Delay,
+        >,
     }
 
-    #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None])]
+    #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None, SPI_BUS: Option<BusMgr> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
         rtt_init_print!();
         rprintln!("Hello, world!");
 
         let p = cx.device;
+        let cp = cx.core;
         let mut rcc = p.RCC.freeze(Config::hsi16());
         let mut syscfg = SYSCFG::new(p.SYSCFG, &mut rcc);
         let hsi48 = rcc.enable_hsi48(&mut syscfg, p.CRS);
+
+        // gpioa
         let gpioa = p.GPIOA.split(&mut rcc);
+
+        // gpiob
+        let gpiob = p.GPIOB.split(&mut rcc);
+        let rst = gpiob.pb0.into_push_pull_output();
+        let dc = gpiob.pb1.into_push_pull_output();
+        let cs_epd = gpiob.pb2.into_push_pull_output();
+        let sck = gpiob.pb3;
+        let miso = gpiob.pb4;
+        let mosi = gpiob.pb5;
+        let cs_flash = gpiob.pb6.into_push_pull_output();
+        let busy_in = gpiob.pb7.into_floating_input();
+
         let usb = USB::new(p.USB, gpioa.pa11, gpioa.pa12, hsi48);
+        let mut delay = Delay::new(cp.SYST, rcc.clocks);
 
         // trick to make usb_bus live forever, lifted from
         // https://github.com/rtic-rs/rtic-examples/blob/master/rtic_v1/stm32f0_hid_mouse/src/main.rs
         let usb_bus = cx.local.USB_BUS;
         *usb_bus = Some(UsbBus::new(usb));
-        
+
+        let spi = p
+            .SPI1
+            .spi((sck, miso, mosi), MODE_0, 4_000_000.Hz(), &mut rcc);
+
+        // Create a shared SPI bus and also make it live forever
+        let spi_bus = cx.local.SPI_BUS;
+        *spi_bus = Some(shared_bus::BusManagerSimple::new(spi));
+        let mut spi_epd = spi_bus.as_ref().unwrap().acquire_spi();
+        let spi_flash = spi_bus.as_ref().unwrap().acquire_spi();
+
+        // Setup EPD
+        rprintln!("Setup EPD...");
+        let mut epd =
+            Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
+        let mut flash = flash::SpiFlash::new(spi_flash, cs_flash, &mut delay);
+
         let webusb = WebUsb::new(
             usb_bus.as_ref().unwrap(),
             url_scheme::HTTPS,
@@ -66,14 +128,15 @@ mod app {
             .serial_number(serial_string_from_device_id())
             .max_packet_size_0(64)
             .build();
-        
 
-        ( Shared {},
-          Local { 
-            led_b: gpioa.pa8.into_push_pull_output(),
-            usb_dev: usb_dev,
-            webusb: webusb
-            }
+        (
+            Shared {},
+            Local {
+                led_b: gpioa.pa8.into_push_pull_output(),
+                usb_dev: usb_dev,
+                webusb: webusb,
+                epd: epd,
+            },
         )
     }
 
@@ -95,7 +158,7 @@ mod app {
         rprintln!("idle");
         loop {
             // Allow MCU to sleep between interrupts
-    //        rtic::export::wfi()
+            //        rtic::export::wfi()
         }
     }
 
@@ -105,10 +168,8 @@ mod app {
     pub fn serial_string_from_device_id() -> &'static str {
         unsafe {
             device_id(&mut THIS_DEVICE_ID);
-            return format_no_std::show(
-                &mut SERIAL_NUM,
-                format_args!("{}", THIS_DEVICE_ID.hex()),
-            ).unwrap();
+            return format_no_std::show(&mut SERIAL_NUM, format_args!("{}", THIS_DEVICE_ID.hex()))
+                .unwrap();
         }
     }
 }

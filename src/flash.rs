@@ -63,7 +63,6 @@ impl DFUMemIO for SpiFlash<'_> {
     const TRANSFER_SIZE: u16 = 1024;
 
     fn read(&mut self, address: u32, length: usize) -> Result<&[u8], DFUMemError> {
-
         if address == VERSION_VIRTUAL_ADDRESS {
             let version = env!("VERGEN_GIT_SHA").as_bytes();
             self.buffer[0..version.len()].copy_from_slice(version);
@@ -108,7 +107,7 @@ impl DFUMemIO for SpiFlash<'_> {
         }
         // If you enable this for debugging, increase PROGRAM_TIME
         // hprintln!("P:{} {}", address, length);
-        if address == CONTROL_AREA_ADDRESS{
+        if address == CONTROL_AREA_ADDRESS {
             let new_da = self.buffer[..4].try_into().unwrap();
             self.read_update_display_address(u32::from_le_bytes(new_da));
             return Ok(());

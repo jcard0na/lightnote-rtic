@@ -1,6 +1,6 @@
 [package]
 authors = ["Javier Cardona <javier@cardonabits.com>"]
-edition = "2018"
+edition = "2021"
 readme = "README.md"
 name = "lightnote-rtic"
 version = "0.1.0"
@@ -10,14 +10,25 @@ cortex-m = { version = "0.7.6", features = ["critical-section-single-core"]}
 cortex-m-rt = "0.7.1"
 cortex-m-semihosting = "0.3.7"
 defmt-rtt = "0.4.0"
+embedded-graphics = "0.7.1"
+#epd-waveshare = "0.5.0"
+epd-waveshare = { git = "https://github.com/caemor/epd-waveshare.git", rev = "f98c12160fe211d2cc83188419a9ec4e855c789d" }
 format_no_std = "1.0.0"
 hex-display = "0.3.0"
+int-enum = { version = "0.5.0", default-features = false }
 panic-halt = "0.2.0"
+panic-rtt-target = { version = "0.1.2", features = ["cortex-m"] }
 rtic = { version = "2.0.1", features = ["cortex-m", "thumbv6-backend" ] }
 rtt-target = "0.4.0"
+shared-bus = { version = "0.3.1", features = ["cortex-m"] }
+spi-memory = "0.2.0"
 stm32l0xx-hal = { version = "0.10.0", features = ["stm32-usbd", "mcu-STM32L052C8Tx", "rt"]}
 usb-device = { version = "0.2.9", features = ["control-buffer-256"] }
+usbd-dfu = "0.3.1"
 usbd-webusb = "1.0.2"
+
+[build-dependencies]
+vergen = { version = "8.0.0", features = ["build", "git", "gitcl"] }
 
 # Uncomment for the allocator example.
 # alloc-cortex-m = "0.4.0"

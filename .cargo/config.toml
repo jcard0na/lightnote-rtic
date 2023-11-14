@@ -1,7 +1,7 @@
-[target.thumbv7m-none-eabi]
+[target.thumbv6m-none-eabi]
 # uncomment this to make `cargo run` execute programs on QEMU
 # runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -kernel"
-runner = 'probe-run --chip STM32L052C8Tx'
+runner = 'probe-rs run --chip STM32L052C8Tx'
 
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
 # uncomment ONE of these three option to make `cargo run` start a GDB session
@@ -11,6 +11,7 @@ runner = 'probe-run --chip STM32L052C8Tx'
 # runner = "gdb -q -x openocd.gdb"
 
 rustflags = [
+  "-C", "linker=flip-link",
   # Previously, the linker arguments --nmagic and -Tlink.x were set here.
   # They are now set by build.rs instead. The linker argument can still
   # only be set here, if a custom linker is needed.

@@ -7,15 +7,16 @@
 //! Cargo re-run the build script whenever `memory.x` is changed,
 //! updating `memory.x` ensures a rebuild of the application with the
 //! new memory settings.
-//!
-//! The build script also sets the linker flags to tell it which link script to use.
 
 use std::env;
+use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-fn main() {
+use vergen::EmitBuilder;
+
+fn main() -> Result<(), Box<dyn Error>> {
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
@@ -25,13 +26,14 @@ fn main() {
         .unwrap();
     println!("cargo:rustc-link-search={}", out.display());
 
+    EmitBuilder::builder().all_git().emit()?;
+    println!("cargo:rerun-if-changed=.git/HEAD");
+
     // By default, Cargo will re-run a build script whenever
     // any file in the project changes. By specifying `memory.x`
     // here, we ensure the build script is only re-run when
     // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
-
-    // Specify linker arguments.
 
     // `--nmagic` is required if memory section addresses are not aligned to 0x10000,
     // for example the FLASH and RAM sections in your `memory.x`.
@@ -40,4 +42,6 @@ fn main() {
 
     // Set the linker script to the one provided by cortex-m-rt.
     println!("cargo:rustc-link-arg=-Tlink.x");
+
+    Ok(())
 }
