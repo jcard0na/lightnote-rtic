@@ -4,17 +4,17 @@ args = ["build", "--release"]
 
 [tasks.flash]
 command = "JRunExe"
-args = ["-device", "STM32L051C8", "-if", "SWD", "--semihost", "target/thumbv6m-none-eabi/release/lightnote-rtic"]
+args = ["-device", "STM32L052C8", "-if", "SWD", "--semihost", "target/thumbv6m-none-eabi/release/lightnote-rtic"]
 dependencies = ["build"]
 
 [tasks.reset]
 command = "JLinkExe"
-args = ["-device", "STM32L051C8", "-if", "SWD", "-speed", "4000", "-AutoConnect", "1", "-CommandFile", "reset.jlink"]
+args = ["-device", "STM32L052C8", "-if", "SWD", "-speed", "4000", "-AutoConnect", "1", "-CommandFile", "reset.jlink"]
 
 [tasks.getopts]
 command = "JLinkExe"
-args = ["-device", "STM32L051C8", "-if", "SWD", "-speed", "4000", "-AutoConnect", "1", "-CommandFile", "getopts.jlink"]
+args = ["-device", "STM32L052C8", "-if", "SWD", "-speed", "4000", "-AutoConnect", "1", "-CommandFile", "getopts.jlink"]
 
 [tasks.debug]
 command = "JLinkGDBServerCLExe"
-args = ["-device", "STM32L051C8", "-if", "SWD", "-speed", "4000"]
+args = ["-device", "STM32L052C8", "-if", "SWD", "-speed", "4000"]

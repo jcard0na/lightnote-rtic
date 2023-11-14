@@ -12,7 +12,6 @@ use stm32l0xx_hal as hal;
 
 #[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [])]
 mod app {
-    use cortex_m::asm;
     use hex_display::HexDisplayExt;
     use rtt_target::{rtt_init_print, rprintln};
     use usb_device::{
@@ -56,12 +55,12 @@ mod app {
         let usb_bus = cx.local.USB_BUS;
         *usb_bus = Some(UsbBus::new(usb));
         
-        let mut webusb = WebUsb::new(
+        let webusb = WebUsb::new(
             usb_bus.as_ref().unwrap(),
             url_scheme::HTTPS,
             "cardonabits.github.io/lightnote-app/",
         );
-        let mut usb_dev = UsbDeviceBuilder::new(usb_bus.as_ref().unwrap(), UsbVidPid(0xf055, 0xdf11))
+        let usb_dev = UsbDeviceBuilder::new(usb_bus.as_ref().unwrap(), UsbVidPid(0xf055, 0xdf11))
             .manufacturer("Cardona Bits")
             .product("Lightnote")
             .serial_number(serial_string_from_device_id())
@@ -79,7 +78,7 @@ mod app {
     }
 
     #[task(binds = USB, local = [usb_dev, webusb])]
-    fn usb_handler(mut cx: usb_handler::Context) {
+    fn usb_handler(cx: usb_handler::Context) {
         rprintln!("USB interrupt received.");
 
         let usb_dev = cx.local.usb_dev;
