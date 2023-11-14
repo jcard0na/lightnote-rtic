@@ -1,0 +1,34 @@
+[package]
+authors = ["Javier Cardona <javier@cardonabits.com>"]
+edition = "2018"
+readme = "README.md"
+name = "lightnote-rtic"
+version = "0.1.0"
+
+[dependencies]
+cortex-m = { version = "0.7.6", features = ["critical-section-single-core"]}
+cortex-m-rt = "0.7.1"
+cortex-m-semihosting = "0.3.7"
+defmt-rtt = "0.4.0"
+format_no_std = "1.0.0"
+hex-display = "0.3.0"
+panic-halt = "0.2.0"
+rtic = { version = "2.0.1", features = ["cortex-m", "thumbv6-backend" ] }
+rtt-target = "0.4.0"
+stm32l0xx-hal = { version = "0.10.0", features = ["stm32-usbd", "mcu-STM32L052C8Tx", "rt"]}
+usb-device = { version = "0.2.9", features = ["control-buffer-256"] }
+usbd-webusb = "1.0.2"
+
+# Uncomment for the allocator example.
+# alloc-cortex-m = "0.4.0"
+
+# this lets you use `cargo fix`!
+[[bin]]
+name = "lightnote-rtic"
+test = false
+bench = false
+
+[profile.release]
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+lto = true # better optimizations
