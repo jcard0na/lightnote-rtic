@@ -5,6 +5,7 @@
 use panic_rtt_target as _;
 
 mod config;
+mod display;
 mod errors;
 mod flash;
 mod nvm;
@@ -15,21 +16,25 @@ use stm32l0xx_hal as hal;
 #[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [SPI2])]
 mod app {
 
-    use crate::flash::SpiFlash;
-    use crate::config;
-    use crate::hal::{
-        delay::Delay,
-        gpio::{
-            gpioa::PA8,
-            gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7},
-            Output, PushPull,
+    use crate::{
+        config::{self, FlashConfig, QAType},
+        display::show_q_or_a,
+        flash::SpiFlash,
+        hal::{
+            delay::Delay,
+            gpio::{
+                gpioa::PA8,
+                gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7},
+                Output, PushPull,
+            },
+            prelude::*,
+            rcc::Config,
+            signature::device_id,
+            spi::{Spi, MODE_0},
+            syscfg::SYSCFG,
+            usb::{UsbBus, USB},
         },
-        prelude::*,
-        rcc::Config,
-        signature::device_id,
-        spi::{Spi, MODE_0},
-        syscfg::SYSCFG,
-        usb::{UsbBus, USB},
+        voltage::VoltageLevels::High
     };
     use epd_waveshare::{epd1in54_v2::*, prelude::*};
     use hex_display::HexDisplayExt;
@@ -57,7 +62,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        flash: SpiFlash<'static>
+        flash: SpiFlash<'static>,
     }
 
     #[local]
@@ -144,9 +149,7 @@ mod app {
         epd_handler::spawn(r).unwrap();
 
         (
-            Shared {
-                flash,
-            },
+            Shared { flash },
             Local {
                 delay,
                 epd,
@@ -158,16 +161,31 @@ mod app {
         )
     }
 
-    #[task(priority = 0, local = [delay, epd, spi_epd])]
-    async fn epd_handler(cx: epd_handler::Context, mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>) {
+    #[task(priority = 0, local = [delay, epd, spi_epd], shared = [flash])]
+    async fn epd_handler(
+        mut cx: epd_handler::Context,
+        mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
+    ) {
         rprintln!("epd_handler");
-        let epd = cx.local.epd;
-        let spi_epd = cx.local.spi_epd;
-        let delay = cx.local.delay;
-        epd.set_lut(spi_epd, delay, Some(RefreshLut::Full)).unwrap();
-        epd.clear_frame(spi_epd, delay).unwrap();
-        // epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
-        epd.display_frame(spi_epd, delay).unwrap();
+        // XXX: later on we'll pass flash_that_needs_to_be_locked to show_q_a for 
+        // finer grained locking
+        cx.shared.flash.lock(|flash| {
+            let epd = cx.local.epd;
+            let spi_epd = cx.local.spi_epd;
+            let delay = cx.local.delay;
+            // XXX: Until we read it from flash
+            let config = FlashConfig { page_size: 8192, num_pages: 100, q_type: config::QAType::RawImage, a_type: QAType::Text };
+            show_q_or_a(
+                epd,
+                spi_epd,
+                High,
+                flash,
+                delay,
+                &config,
+                0x0000_0000,
+                false 
+            ).ok();
+        });
     }
 
     // #[idle]
@@ -176,16 +194,17 @@ mod app {
     //     loop {}
     // }
 
-    #[task(binds = USB, local = [led_b, usb_dev, webusb])]
-    fn usb_handler(cx: usb_handler::Context) {
-        rprintln!("USB interrupt received.");
+    // #[task(binds = USB, local = [led_b, usb_dev, webusb])]
+    // fn usb_handler(cx: usb_handler::Context) {
+    //     rprintln!("USB interrupt received.");
 
-        let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
-        led.toggle().ok();
+    //     let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
+    //     led.toggle().ok();
 
-        let usb_dev = cx.local.usb_dev;
-        usb_dev.poll(&mut [cx.local.webusb]);
-    }
+    //     let usb_dev = cx.local.usb_dev;
+    //     usb_dev.poll(&mut [cx.local.webusb]);
+    //     rprintln!("USB interrupt done");
+    // }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
     static mut SERIAL_NUM: [u8; 25] = [0; 25];
