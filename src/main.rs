@@ -41,7 +41,7 @@ mod app {
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprintln, rtt_init_print};
-    use shared_bus::{BusManager, NullMutex, SpiProxy};
+    use shared_bus_rtic::SharedBus;
     use usb_device::{
         bus::UsbBusAllocator,
         prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
@@ -161,7 +161,7 @@ mod app {
         )
     }
 
-    #[task(priority = 0, local = [delay, epd, spi_epd], shared = [flash])]
+    #[task(priority = 1, local = [delay, epd, spi_epd], shared = [flash])]
     async fn epd_handler(
         mut cx: epd_handler::Context,
         mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
@@ -194,17 +194,17 @@ mod app {
     //     loop {}
     // }
 
-    // #[task(binds = USB, local = [led_b, usb_dev, webusb])]
-    // fn usb_handler(cx: usb_handler::Context) {
-    //     rprintln!("USB interrupt received.");
+    #[task(priority = 2, binds = USB, local = [led_b, usb_dev, webusb])]
+    fn usb_handler(cx: usb_handler::Context) {
+        rprintln!("USB interrupt received.");
 
-    //     let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
-    //     led.toggle().ok();
+        let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
+        led.toggle().ok();
 
-    //     let usb_dev = cx.local.usb_dev;
-    //     usb_dev.poll(&mut [cx.local.webusb]);
-    //     rprintln!("USB interrupt done");
-    // }
+        let usb_dev = cx.local.usb_dev;
+        usb_dev.poll(&mut [cx.local.webusb]);
+        rprintln!("USB interrupt done");
+    }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
     static mut SERIAL_NUM: [u8; 25] = [0; 25];
