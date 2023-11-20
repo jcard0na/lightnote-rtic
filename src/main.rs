@@ -13,7 +13,7 @@ mod voltage;
 
 use stm32l0xx_hal as hal;
 
-#[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [SPI2])]
+#[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [RTC])]
 mod app {
 
     use crate::{
@@ -62,7 +62,6 @@ mod app {
 
     #[shared]
     struct Shared {
-        flash: SpiFlash<'static>,
     }
 
     #[local]
@@ -76,6 +75,7 @@ mod app {
             PB0<stm32l0xx_hal::gpio::Output<stm32l0xx_hal::gpio::PushPull>>,
             stm32l0xx_hal::delay::Delay,
         >,
+        flash: SpiFlash<'static>,
         led_b: PA8<Output<PushPull>>,
         spi_epd: SpiProxy<'static, BusMgrInner>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
@@ -149,10 +149,11 @@ mod app {
         epd_handler::spawn(r).unwrap();
 
         (
-            Shared { flash },
+            Shared {},
             Local {
                 delay,
                 epd,
+                flash,
                 led_b: gpioa.pa8.into_push_pull_output(),
                 spi_epd,
                 usb_dev,
@@ -161,20 +162,19 @@ mod app {
         )
     }
 
-    #[task(priority = 0, local = [delay, epd, spi_epd], shared = [flash])]
+    #[task(priority = 1, local = [delay, epd, flash, spi_epd])]
     async fn epd_handler(
         mut cx: epd_handler::Context,
         mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
     ) {
-        rprintln!("epd_handler");
-        // XXX: later on we'll pass flash_that_needs_to_be_locked to show_q_a for 
-        // finer grained locking
-        cx.shared.flash.lock(|flash| {
-            let epd = cx.local.epd;
-            let spi_epd = cx.local.spi_epd;
-            let delay = cx.local.delay;
-            // XXX: Until we read it from flash
-            let config = FlashConfig { page_size: 8192, num_pages: 100, q_type: config::QAType::RawImage, a_type: QAType::Text };
+        rprintln!("epd_handlerx");
+        let epd = cx.local.epd;
+        let spi_epd = cx.local.spi_epd;
+        let delay = cx.local.delay;
+        let flash = cx.local.flash;
+        // XXX: Until we read it from flash
+        let config = FlashConfig { page_size: 8192, num_pages: 100, q_type: config::QAType::RawImage, a_type: QAType::Text };
+        loop {
             show_q_or_a(
                 epd,
                 spi_epd,
@@ -185,7 +185,8 @@ mod app {
                 0x0000_0000,
                 false 
             ).ok();
-        });
+            delay.delay_ms(1000u32);
+        }
     }
 
     // #[idle]
@@ -194,17 +195,17 @@ mod app {
     //     loop {}
     // }
 
-    // #[task(binds = USB, local = [led_b, usb_dev, webusb])]
-    // fn usb_handler(cx: usb_handler::Context) {
-    //     rprintln!("USB interrupt received.");
+    #[task(binds = USB, priority = 2, local = [led_b, usb_dev, webusb])]
+    fn usb_handler(cx: usb_handler::Context) {
+        rprintln!("USB interrupt received.");
 
-    //     let led: &mut PA8<Output<PushPull>> = cx.local.led_b;
-    //     led.toggle().ok();
+        let led = cx.local.led_b;
+        led.toggle().ok();
 
-    //     let usb_dev = cx.local.usb_dev;
-    //     usb_dev.poll(&mut [cx.local.webusb]);
-    //     rprintln!("USB interrupt done");
-    // }
+        let usb_dev = cx.local.usb_dev;
+        usb_dev.poll(&mut [cx.local.webusb]);
+        rprintln!("USB interrupt done");
+    }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
     static mut SERIAL_NUM: [u8; 25] = [0; 25];

@@ -22,6 +22,7 @@ rtic = { version = "2.0.1", features = ["cortex-m", "thumbv6-backend" ] }
 rtic-sync = "1.0.2"
 rtt-target = "0.4.0"
 shared-bus = { version = "0.3.1", features = ["cortex-m"] }
+shared-bus-rtic = { version = "0.2.2", features = ["cortex-m", "thumbv6"] }
 spi-memory = "0.2.0"
 static_assertions = "1.1.0"
 stm32l0xx-hal = { version = "0.10.0", features = ["stm32-usbd", "mcu-STM32L052C8Tx", "rt"]}

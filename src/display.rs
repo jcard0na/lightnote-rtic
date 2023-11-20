@@ -104,77 +104,77 @@ pub(crate) fn show_q_or_a<'a>(
     // Use display graphics from embedded-graphics
     let mut display = Display1in54::default();
 
-    // Display1in54 internal buffer is initialized black.  We want it white.
-    Rectangle::new(Point::new(0, 0), Size::new(200, 200))
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .stroke_width(0)
-                .fill_color(Color::White)
-                .build(),
-        )
-        .draw(&mut display)
-        .unwrap();
+    // // Display1in54 internal buffer is initialized black.  We want it white.
+    // Rectangle::new(Point::new(0, 0), Size::new(200, 200))
+    //     .into_styled(
+    //         PrimitiveStyleBuilder::new()
+    //             .stroke_width(0)
+    //             .fill_color(Color::White)
+    //             .build(),
+    //     )
+    //     .draw(&mut display)
+    //     .unwrap();
 
-    flash.check_flash_id()?;
+    // flash.check_flash_id()?;
 
-    const LINE_HEIGHT: u32 = 22;
-    let font = FontRenderer::new::<fonts::u8g2_font_helvB12_te>()
-        .with_ignore_unknown_chars(true)
-        .with_line_height(LINE_HEIGHT);
+    // const LINE_HEIGHT: u32 = 22;
+    // let font = FontRenderer::new::<fonts::u8g2_font_helvB12_te>()
+    //     .with_ignore_unknown_chars(true)
+    //     .with_line_height(LINE_HEIGHT);
 
-    const READ_BUFFER_SIZE: usize = 1000;
-    // READ_BUFFER_SIZE must be a divisor of 5000 so that we read the entire data
-    // READ_BUFFER_SIZE must be a multiple of 25, which is the data length in bytes
-    // of a single row
-    sa::const_assert_eq!(RAW_IMAGE_SIZE % READ_BUFFER_SIZE as u32, 0);
-    sa::const_assert_eq!(READ_BUFFER_SIZE as u32 % 25, 0);
-    const RAW_IMAGE_SIZE: u32 = 5000;
-    const MEM_READS_PER_IMAGE: u32 = RAW_IMAGE_SIZE / (READ_BUFFER_SIZE as u32);
-    const IMAGE_ROWS_PER_READ: u32 = READ_BUFFER_SIZE as u32 / 25;
-    let mut addr;
-    if config.q_type == QAType::RawImage && !show_answer {
-        addr = display_addr;
-        for i in 0u32..MEM_READS_PER_IMAGE {
-            let buf = flash.read(addr, READ_BUFFER_SIZE)?;
+    // const READ_BUFFER_SIZE: usize = 1000;
+    // // READ_BUFFER_SIZE must be a divisor of 5000 so that we read the entire data
+    // // READ_BUFFER_SIZE must be a multiple of 25, which is the data length in bytes
+    // // of a single row
+    // sa::const_assert_eq!(RAW_IMAGE_SIZE % READ_BUFFER_SIZE as u32, 0);
+    // sa::const_assert_eq!(READ_BUFFER_SIZE as u32 % 25, 0);
+    // const RAW_IMAGE_SIZE: u32 = 5000;
+    // const MEM_READS_PER_IMAGE: u32 = RAW_IMAGE_SIZE / (READ_BUFFER_SIZE as u32);
+    // const IMAGE_ROWS_PER_READ: u32 = READ_BUFFER_SIZE as u32 / 25;
+    // let mut addr;
+    // if config.q_type == QAType::RawImage && !show_answer {
+    //     addr = display_addr;
+    //     for i in 0u32..MEM_READS_PER_IMAGE {
+    //         let buf = flash.read(addr, READ_BUFFER_SIZE)?;
 
-            let raw_image = ImageRaw::<BinaryColor>::new(&buf[..], 200);
-            let image = Image::new(&raw_image, Point::new(0, (i * IMAGE_ROWS_PER_READ) as i32));
-            if let Err(_) = image.draw(&mut display.color_converted()) {
-                return Err(LightNoteErrors::FailedToRenderImage);
-            }
-            addr += READ_BUFFER_SIZE as u32;
-        }
-        if config.a_type == QAType::Text {
-            status = QAStatus::AnswerPending;
-        }
-    }
-    if show_answer && config.a_type == QAType::Text {
-         addr = display_addr + RAW_IMAGE_SIZE;
-         let buf = flash.read(addr, READ_BUFFER_SIZE)?;
-         let mut iter = buf.split(|b| *b == 0u8);
-         if let Some(text_buffer) = iter.next() {
-            if let Ok(text) = core::str::from_utf8(text_buffer) {
-                let c = text.matches("\n").count() as i32;
-                let text_origin = Point::new(100, max(0, 100 - LINE_HEIGHT as i32 * (c - 1) / 2));
-                if let Err(_) = font.render_aligned(
-                    text,
-                    text_origin,
-                    VerticalPosition::Baseline,
-                    HorizontalAlignment::Center,
-                    FontColor::Transparent(Color::Black),
-                    &mut display,
-                ) {
-                    return Err(LightNoteErrors::FailedToRenderText);
-                }
-            }
-         }
-    }
-    if let Some(charge) = charge_to_show_for(charge) {
-        draw_charge_icon(&charge, &mut display);
-    }
+    //         let raw_image = ImageRaw::<BinaryColor>::new(&buf[..], 200);
+    //         let image = Image::new(&raw_image, Point::new(0, (i * IMAGE_ROWS_PER_READ) as i32));
+    //         if let Err(_) = image.draw(&mut display.color_converted()) {
+    //             return Err(LightNoteErrors::FailedToRenderImage);
+    //         }
+    //         addr += READ_BUFFER_SIZE as u32;
+    //     }
+    //     if config.a_type == QAType::Text {
+    //         status = QAStatus::AnswerPending;
+    //     }
+    // }
+    // if show_answer && config.a_type == QAType::Text {
+    //      addr = display_addr + RAW_IMAGE_SIZE;
+    //      let buf = flash.read(addr, READ_BUFFER_SIZE)?;
+    //      let mut iter = buf.split(|b| *b == 0u8);
+    //      if let Some(text_buffer) = iter.next() {
+    //         if let Ok(text) = core::str::from_utf8(text_buffer) {
+    //             let c = text.matches("\n").count() as i32;
+    //             let text_origin = Point::new(100, max(0, 100 - LINE_HEIGHT as i32 * (c - 1) / 2));
+    //             if let Err(_) = font.render_aligned(
+    //                 text,
+    //                 text_origin,
+    //                 VerticalPosition::Baseline,
+    //                 HorizontalAlignment::Center,
+    //                 FontColor::Transparent(Color::Black),
+    //                 &mut display,
+    //             ) {
+    //                 return Err(LightNoteErrors::FailedToRenderText);
+    //             }
+    //         }
+    //      }
+    // }
+    // if let Some(charge) = charge_to_show_for(charge) {
+    //     draw_charge_icon(&charge, &mut display);
+    // }
 
     epd.set_lut(spi_epd, delay, Some(RefreshLut::Full)).unwrap();
-    epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
+    //epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
     epd.display_frame(spi_epd, delay).unwrap();
     Ok(status)
 }
