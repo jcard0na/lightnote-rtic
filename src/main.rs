@@ -16,6 +16,12 @@ use stm32l0xx_hal as hal;
 #[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [RTC])]
 mod app {
 
+    use  core::mem::MaybeUninit;
+
+    const USB_PACKET_SIZE: u16 = 64; // 8,16,32,64
+    static mut USB_TRANSPORT_BUF: MaybeUninit<[u8; 512]> = MaybeUninit::uninit();
+    const BLOCK_SIZE: u32 = 512;
+    const MAX_LUN: u8 = 0; // max 0x0F
     use crate::{
         config::{self, FlashConfig, QAType},
         display::show_q_or_a,
@@ -36,7 +42,7 @@ mod app {
         },
         voltage::VoltageLevels::High
     };
-    use epd_waveshare::{epd1in54_v2::*, prelude::*};
+    use epd_waveshare::{epd1in54_v2::{*, Display1in54}, prelude::*};
     use hex_display::HexDisplayExt;
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
@@ -46,6 +52,10 @@ mod app {
         bus::UsbBusAllocator,
         prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
     };
+    use usbd_storage::{subclass::scsi::{Scsi, ScsiCommand}};
+    use usbd_storage::subclass::Command;
+    use usbd_storage::transport::bbb::{BulkOnly, BulkOnlyError};
+    use usbd_storage::transport::TransportError;
     use usbd_webusb::{url_scheme, WebUsb};
 
     type BusMgrInner = NullMutex<
@@ -77,6 +87,7 @@ mod app {
         >,
         flash: SpiFlash<'static>,
         led_b: PA8<Output<PushPull>>,
+        scsi: Scsi<BulkOnly<'static, UsbBus<USB>, &'static mut [u8]>>,
         spi_epd: SpiProxy<'static, BusMgrInner>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
         webusb: WebUsb<UsbBus<USB>>,
@@ -138,6 +149,12 @@ mod app {
             url_scheme::HTTPS,
             "cardonabits.github.io/lightnote-app/",
         );
+
+        let mut scsi = usbd_storage::subclass::scsi::Scsi::new(usb_bus.as_ref().unwrap(), USB_PACKET_SIZE, MAX_LUN, unsafe {
+            USB_TRANSPORT_BUF.assume_init_mut().as_mut_slice()
+        })
+        .unwrap();
+
         let usb_dev = UsbDeviceBuilder::new(usb_bus.as_ref().unwrap(), UsbVidPid(0xf055, 0xdf11))
             .manufacturer("Cardona Bits")
             .product("Lightnote")
@@ -155,6 +172,7 @@ mod app {
                 epd,
                 flash,
                 led_b: gpioa.pa8.into_push_pull_output(),
+                scsi,
                 spi_epd,
                 usb_dev,
                 webusb,
@@ -172,19 +190,22 @@ mod app {
         let spi_epd = cx.local.spi_epd;
         let delay = cx.local.delay;
         let flash = cx.local.flash;
+
         // XXX: Until we read it from flash
         let config = FlashConfig { page_size: 8192, num_pages: 100, q_type: config::QAType::RawImage, a_type: QAType::Text };
         loop {
-            show_q_or_a(
-                epd,
-                spi_epd,
-                High,
-                flash,
-                delay,
-                &config,
-                0x0000_0000,
-                false 
-            ).ok();
+            // show_q_or_a(
+            //     epd,
+            //     spi_epd,
+            //     High,
+            //     flash,
+            //     delay,
+            //     &config,
+            //     0x0000_0000,
+            //     display,
+            //     false 
+            // ).ok();
+            rprintln!("epd stuff here...");
             delay.delay_ms(1000u32);
         }
     }
@@ -195,7 +216,7 @@ mod app {
     //     loop {}
     // }
 
-    #[task(binds = USB, priority = 2, local = [led_b, usb_dev, webusb])]
+    #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev, webusb])]
     fn usb_handler(cx: usb_handler::Context) {
         rprintln!("USB interrupt received.");
 
@@ -203,7 +224,7 @@ mod app {
         led.toggle().ok();
 
         let usb_dev = cx.local.usb_dev;
-        usb_dev.poll(&mut [cx.local.webusb]);
+        usb_dev.poll(&mut [cx.local.webusb, cx.local.scsi]);
         rprintln!("USB interrupt done");
     }
 

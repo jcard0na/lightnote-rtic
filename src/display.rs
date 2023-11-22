@@ -102,7 +102,7 @@ pub(crate) fn show_q_or_a<'a>(
     let mut status = QAStatus::ReadyForNextQuestion;
 
     // Use display graphics from embedded-graphics
-    let mut display = Display1in54::default();
+    // let mut display = Display1in54::default();
 
     // // Display1in54 internal buffer is initialized black.  We want it white.
     // Rectangle::new(Point::new(0, 0), Size::new(200, 200))
@@ -174,7 +174,7 @@ pub(crate) fn show_q_or_a<'a>(
     // }
 
     epd.set_lut(spi_epd, delay, Some(RefreshLut::Full)).unwrap();
-    //epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
+    // epd.update_frame(spi_epd, display.buffer(), delay).unwrap();
     epd.display_frame(spi_epd, delay).unwrap();
     Ok(status)
 }
