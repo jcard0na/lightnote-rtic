@@ -11,7 +11,6 @@ use embedded_graphics::{
     primitives::{Primitive, PrimitiveStyleBuilder, Rectangle},
 };
 
-use rtt_target::rprintln;
 use shared_bus::{NullMutex, SpiProxy};
 use static_assertions as sa;
 
@@ -98,7 +97,6 @@ pub(crate) fn show_q_or_a<'a>(
     show_answer: bool,
 ) -> Result<QAStatus, LightNoteErrors> {
 
-    rprintln!("show_q_or_a");
     let mut status = QAStatus::ReadyForNextQuestion;
 
     // Use display graphics from embedded-graphics

@@ -43,5 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Set the linker script to the one provided by cortex-m-rt.
     println!("cargo:rustc-link-arg=-Tlink.x");
 
+    // Link to defmt
+    println!("cargo:rustc-link-arg=-Tdefmt.x");
+
     Ok(())
 }
