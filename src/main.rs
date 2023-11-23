@@ -4,7 +4,6 @@
 
 use panic_rtt_target as _;
 
-use defmt_rtt as _;
 mod config;
 mod display;
 mod errors;
@@ -80,6 +79,7 @@ mod app {
     use hex_display::HexDisplayExt;
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
+    use rtt_target::{rprintln, rtt_init_print};
     use shared_bus::{BusManager, NullMutex, SpiProxy};
     use usb_device::{
         bus::UsbBusAllocator,
@@ -128,7 +128,8 @@ mod app {
     const MSG_Q_CAPACITY: usize = 1;
     #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None, SPI_BUS: Option<BusMgr> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
-        defmt::info!("Hello, world!");
+        rtt_init_print!();
+        rprintln!("Hello, world!");
 
         let p = cx.device;
         let cp = cx.core;
@@ -169,7 +170,7 @@ mod app {
         let spi_flash = spi_bus.as_ref().unwrap().acquire_spi();
 
         // Setup EPD
-        defmt::info!("Setup EPD...");
+        rprintln!("Setup EPD...");
         let mut epd =
             Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
         let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
@@ -219,7 +220,7 @@ mod app {
         mut cx: epd_handler::Context,
         mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
     ) {
-        defmt::info!("epd_handlerx");
+        rprintln!("epd_handlerx");
         let epd = cx.local.epd;
         let spi_epd = cx.local.spi_epd;
         let delay = cx.local.delay;
@@ -244,20 +245,20 @@ mod app {
             //     display,
             //     false
             // ).ok();
-            defmt::info!("epd stuff here...");
+            rprintln!("epd stuff here...");
             delay.delay_ms(1000u32);
         }
     }
 
     // #[idle]
     // fn idle_task(cx: idle_task::Context) -> ! {
-    //     defmt::info!("idle");
+    //     rprintln!("idle");
     //     loop {}
     // }
 
     #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev, webusb])]
     fn usb_handler(cx: usb_handler::Context) {
-        defmt::info!("USB interrupt received.");
+        rprintln!("USB interrupt received.");
 
         let led = cx.local.led_b;
         led.toggle().ok();
@@ -278,10 +279,10 @@ mod app {
         let _ = cx.local.scsi.poll(|command| {
             led.set_low();
             if let Err(err) = process_scsi_command(command) {
-                defmt::info!("scsi poll error");
+                rprintln!("scsi poll error");
             }
         });
-        defmt::info!("USB interrupt done");
+        rprintln!("USB interrupt done");
     }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
@@ -298,7 +299,7 @@ mod app {
     fn process_scsi_command(
         mut command: Command<ScsiCommand, Scsi<BulkOnly<UsbBus<USB>, &mut [u8]>>>,
     ) -> Result<(), TransportError<BulkOnlyError>> {
-        defmt::info!("Handling: scsi cmd");
+        rprintln!("Handling: scsi cmd");
 
         match command.kind {
             ScsiCommand::TestUnitReady { .. } => {
@@ -384,7 +385,7 @@ mod app {
                     // Uncomment this in order to push data in chunks smaller than a USB packet.
                     // let end = min(start + USB_PACKET_SIZE as usize - 1, end);
 
-                    defmt::info!("Data transfer >>>>>>>>");
+                    rprintln!("Data transfer >>>>>>>>");
                     let count = command.write_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
                 } else {
@@ -398,7 +399,7 @@ mod app {
                 if STATE.storage_offset != (len * BLOCK_SIZE) as usize {
                     let start = (BLOCK_SIZE * lba) as usize + STATE.storage_offset;
                     let end = (BLOCK_SIZE * lba) as usize + (BLOCK_SIZE * len) as usize;
-                    defmt::info!("Data transfer <<<<<<<<");
+                    rprintln!("Data transfer <<<<<<<<");
                     let count = command.read_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
 
@@ -425,7 +426,7 @@ mod app {
                 command.pass();
             }
             ref unknown_scsi_kind => {
-                defmt::info!("Unknown SCSI command");
+                rprintln!("Unknown SCSI command");
                 unsafe {
                     STATE.sense_key.replace(0x05); // illegal request Sense Key
                     STATE.sense_key_code.replace(0x20); // Invalid command operation ASC
