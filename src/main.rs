@@ -41,9 +41,8 @@ mod app {
     // this needs to match the size of disk.img
     const BLOCKS: u32 = 16;
     const MAX_LUN: u8 = 0; // max 0x0F
-                           // XXX: This is the actual file content.  It needs to be replaced by flash
-    const STORAGE: &[u8; (BLOCKS * BLOCK_SIZE) as usize] =
-        include_bytes!("disk.img");
+    // XXX: This is the actual file content.  It needs to be replaced by flash
+    static mut STORAGE: [u8; 8192] = *include_bytes!("disk.img");
 
     static mut STATE: State = State {
         storage_offset: 0,
@@ -385,11 +384,8 @@ mod app {
 
                     // Uncomment this in order to push data in chunks smaller than a USB packet.
                     let end = core::cmp::min(start + USB_PACKET_SIZE as usize - 1, end);
-                    let mut buf : [u8; USB_PACKET_SIZE as usize] = [0u8; USB_PACKET_SIZE as usize];
-                    buf[0..(end-start)].clone_from_slice(&STORAGE[start..end]);
-
                     rprintln!("Data transfer >>>>>>>>");
-                    let count = command.write_data(&mut buf)?;
+                    let count = command.write_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
                 } else {
                     command.pass();
@@ -403,8 +399,7 @@ mod app {
                     let start = (BLOCK_SIZE * lba) as usize + STATE.storage_offset;
                     let end = (BLOCK_SIZE * lba) as usize + (BLOCK_SIZE * len) as usize;
                     rprintln!("Data transfer <<<<<<<<");
-                    // let count = command.read_data(&mut STORAGE[start..end])?;
-                    let count = end - start;
+                    let count = command.read_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
 
                     if STATE.storage_offset == (len * BLOCK_SIZE) as usize {
