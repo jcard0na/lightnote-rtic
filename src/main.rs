@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 
 use panic_rtt_target as _;
+use defmt_rtt as _;
 
 mod config;
 mod display;
@@ -83,7 +84,6 @@ mod app {
     use lps22hb::*;
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
-    use rtt_target::{rprintln, rtt_init_print};
     // XXX: This should be replaced by shared_bus_rtic
     use shared_bus::{BusManager, NullMutex, SpiProxy};
     use shared_bus_rtic::CommonBus;
@@ -137,9 +137,6 @@ mod app {
     #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None,
                     SPI_BUS: Option<BusMgr> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
-        rtt_init_print!();
-        rprintln!("Hello, world!");
-
         let p = cx.device;
         let cp = cx.core;
         let mut rcc = p.RCC.freeze(Config::hsi16());
@@ -180,8 +177,9 @@ mod app {
         let mut spi_epd = spi_bus.as_ref().unwrap().acquire_spi();
         let spi_flash = spi_bus.as_ref().unwrap().acquire_spi();
 
-        rprintln!("Setup I2C...");
-        let i2c = p.I2C1.i2c(sda, scl, 100_000.Hz(), &mut rcc); 
+        defmt::info!("Setup I2C...");
+        // let i2c = p.I2C1.i2c(sda, scl, 100_000.Hz(), &mut rcc); 
+        let i2c = I2c::new(p.I2C1, sda, scl, 100_000.Hz(), &mut rcc); 
         let i2c_manager = shared_bus_rtic::new!(i2c,I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>);
 
         let mut sht = shtc3(i2c_manager.acquire());
@@ -197,7 +195,7 @@ mod app {
         // let id = lps22hb.get_device_id().unwrap();
 
         // Setup EPD
-        rprintln!("Setup EPD...");
+        defmt::info!("Setup EPD...");
         let mut epd =
             Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
         let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
@@ -248,14 +246,14 @@ mod app {
         mut cx: epd_handler::Context,
         mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
     ) {
-        rprintln!("epd_handlerx");
+        defmt::info!("epd_handlerx");
         let epd = cx.local.epd;
         let spi_epd = cx.local.spi_epd;
         let delay = cx.local.delay;
         let flash = cx.local.flash;
 
         let sht = cx.local.sht;
-        let temperature = sht.measure_temperature(PowerMode::NormalMode, delay).unwrap();
+        let temperature = sht.measure_temperature(PowerMode::NormalMode,  delay).unwrap();
 
         // XXX: Until we read it from flash
         let config = FlashConfig {
@@ -274,13 +272,13 @@ mod app {
             0x0000_0000,
             false
         ).ok();
-        rprintln!("epd stuff here...");
+        defmt::info!("epd stuff here...");
         delay.delay_ms(1000u32);
     }
 
     #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev, webusb])]
     fn usb_handler(cx: usb_handler::Context) {
-        rprintln!("USB interrupt received.");
+        defmt::info!("USB interrupt received.");
 
         let led = cx.local.led_b;
         led.toggle().ok();
@@ -299,12 +297,12 @@ mod app {
         }
 
         let _ = cx.local.scsi.poll(|command| {
-            led.set_low();
+            led.set_low().ok();
             if let Err(err) = process_scsi_command(command) {
-                rprintln!("scsi poll error");
+                defmt::error!("{}", err);
             }
         });
-        rprintln!("USB interrupt done");
+        defmt::info!("USB interrupt done");
     }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
@@ -321,7 +319,7 @@ mod app {
     fn process_scsi_command(
         mut command: Command<ScsiCommand, Scsi<BulkOnly<UsbBus<USB>, &mut [u8]>>>,
     ) -> Result<(), TransportError<BulkOnlyError>> {
-        rprintln!("Handling: scsi cmd");
+        defmt::info!("Handling: {}", command.kind);
 
         match command.kind {
             ScsiCommand::TestUnitReady { .. } => {
@@ -406,7 +404,7 @@ mod app {
 
                     // Uncomment this in order to push data in chunks smaller than a USB packet.
                     let end = core::cmp::min(start + USB_PACKET_SIZE as usize - 1, end);
-                    rprintln!("Data transfer >>>>>>>>");
+                    defmt::info!("Data transfer >>>>>>>> [{}..{}]", start, end);
                     let count = command.write_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
                 } else {
@@ -420,7 +418,7 @@ mod app {
                 if STATE.storage_offset != (len * BLOCK_SIZE) as usize {
                     let start = (BLOCK_SIZE * lba) as usize + STATE.storage_offset;
                     let end = (BLOCK_SIZE * lba) as usize + (BLOCK_SIZE * len) as usize;
-                    rprintln!("Data transfer <<<<<<<<");
+                    defmt::info!("Data transfer <<<<<<<< [{}..{}]", start, end);
                     let count = command.read_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
 
@@ -447,7 +445,7 @@ mod app {
                 command.pass();
             }
             ref unknown_scsi_kind => {
-                rprintln!("Unknown SCSI command");
+                defmt::error!("Unknown SCSI command: {}", unknown_scsi_kind);
                 unsafe {
                     STATE.sense_key.replace(0x05); // illegal request Sense Key
                     STATE.sense_key_code.replace(0x20); // Invalid command operation ASC
