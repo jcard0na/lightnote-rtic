@@ -60,9 +60,11 @@ mod app {
             delay::Delay,
             gpio::{
                 gpioa::PA8,
-                gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7},
-                Output, PushPull,
+                gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7, PB8, PB9},
+                Output, PushPull, OpenDrain,
             },
+            i2c::I2c,
+            pac::{I2C1},
             prelude::*,
             rcc::Config,
             signature::device_id,
@@ -77,10 +79,15 @@ mod app {
         prelude::*,
     };
     use hex_display::HexDisplayExt;
+    use lps22hb::interface::{I2cInterface, i2c::I2cAddress};
+    use lps22hb::*;
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
     use rtt_target::{rprintln, rtt_init_print};
+    // XXX: This should be replaced by shared_bus_rtic
     use shared_bus::{BusManager, NullMutex, SpiProxy};
+    use shared_bus_rtic::CommonBus;
+    use shtcx::{sensor_class::Sht2Gen, shtc3, ShtCx, PowerMode};
     use usb_device::{
         bus::UsbBusAllocator,
         prelude::{UsbDevice, UsbDeviceBuilder, UsbDeviceState, UsbVidPid},
@@ -120,13 +127,15 @@ mod app {
         flash: SpiFlash<'static>,
         led_b: PA8<Output<PushPull>>,
         scsi: Scsi<BulkOnly<'static, UsbBus<USB>, &'static mut [u8]>>,
+        sht: ShtCx<Sht2Gen, &'static CommonBus<I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>>>,
         spi_epd: SpiProxy<'static, BusMgrInner>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
         webusb: WebUsb<UsbBus<USB>>,
     }
 
     const MSG_Q_CAPACITY: usize = 1;
-    #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None, SPI_BUS: Option<BusMgr> = None])]
+    #[init(local = [USB_BUS: Option<UsbBusAllocator<UsbBus<USB>>> = None,
+                    SPI_BUS: Option<BusMgr> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
         rtt_init_print!();
         rprintln!("Hello, world!");
@@ -150,6 +159,8 @@ mod app {
         let mosi = gpiob.pb5;
         let cs_flash = gpiob.pb6.into_push_pull_output();
         let busy_in = gpiob.pb7.into_floating_input();
+        let scl = gpiob.pb8.into_open_drain_output();
+        let sda = gpiob.pb9.into_open_drain_output();
 
         let usb = USB::new(p.USB, gpioa.pa11, gpioa.pa12, hsi48);
         let mut delay = Delay::new(cp.SYST, rcc.clocks);
@@ -168,6 +179,22 @@ mod app {
         *spi_bus = Some(shared_bus::BusManagerSimple::new(spi));
         let mut spi_epd = spi_bus.as_ref().unwrap().acquire_spi();
         let spi_flash = spi_bus.as_ref().unwrap().acquire_spi();
+
+        rprintln!("Setup I2C...");
+        let i2c = p.I2C1.i2c(sda, scl, 100_000.Hz(), &mut rcc); 
+        let i2c_manager = shared_bus_rtic::new!(i2c,I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>);
+
+        let mut sht = shtc3(i2c_manager.acquire());
+        // let i2c_interface = I2cInterface::init(i2c_manager.acquire(), I2cAddress::SA0_VCC);
+        // let mut lps22hb = LPS22HB::new(i2c_interface);
+
+        // lps22hb.one_shot().unwrap();
+        
+        // // read temperature and pressure
+        
+        // let temp = lps22hb.read_temperature().unwrap();                    
+        // let press = lps22hb.read_pressure().unwrap();
+        // let id = lps22hb.get_device_id().unwrap();
 
         // Setup EPD
         rprintln!("Setup EPD...");
@@ -208,6 +235,7 @@ mod app {
                 flash,
                 led_b: gpioa.pa8.into_push_pull_output(),
                 scsi,
+                sht,
                 spi_epd,
                 usb_dev,
                 webusb,
@@ -215,7 +243,7 @@ mod app {
         )
     }
 
-    #[task(priority = 1, local = [delay, epd, flash, spi_epd])]
+    #[task(priority = 1, local = [delay, epd, flash, sht, spi_epd])]
     async fn epd_handler(
         mut cx: epd_handler::Context,
         mut receiver: Receiver<'static, u32, MSG_Q_CAPACITY>,
@@ -225,6 +253,9 @@ mod app {
         let spi_epd = cx.local.spi_epd;
         let delay = cx.local.delay;
         let flash = cx.local.flash;
+
+        let sht = cx.local.sht;
+        let temperature = sht.measure_temperature(PowerMode::NormalMode, delay).unwrap();
 
         // XXX: Until we read it from flash
         let config = FlashConfig {
@@ -246,12 +277,6 @@ mod app {
         rprintln!("epd stuff here...");
         delay.delay_ms(1000u32);
     }
-
-    // #[idle]
-    // fn idle_task(cx: idle_task::Context) -> ! {
-    //     rprintln!("idle");
-    //     loop {}
-    // }
 
     #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev, webusb])]
     fn usb_handler(cx: usb_handler::Context) {
