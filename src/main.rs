@@ -233,21 +233,18 @@ mod app {
             q_type: config::QAType::RawImage,
             a_type: QAType::Text,
         };
-        loop {
-            // show_q_or_a(
-            //     epd,
-            //     spi_epd,
-            //     High,
-            //     flash,
-            //     delay,
-            //     &config,
-            //     0x0000_0000,
-            //     display,
-            //     false
-            // ).ok();
-            rprintln!("epd stuff here...");
-            delay.delay_ms(1000u32);
-        }
+        show_q_or_a(
+            epd,
+            spi_epd,
+            High,
+            flash,
+            delay,
+            &config,
+            0x0000_0000,
+            false
+        ).ok();
+        rprintln!("epd stuff here...");
+        delay.delay_ms(1000u32);
     }
 
     // #[idle]
