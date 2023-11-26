@@ -29,12 +29,13 @@ impl From<nvm::Error> for BlockDeviceError{
     }
 }
 
-const FLASH_SECTOR_SIZE: usize = 4096;
+const FLASH_SECTOR_SIZE: usize = 512;
 
 impl BlockDevice for SpiFlash<'_> {
     const BLOCK_BYTES: usize = FLASH_SECTOR_SIZE;
 
     fn read_block(&self, lba: u32, block: &mut [u8]) -> Result<(), BlockDeviceError> {
+        defmt::info!("read_block {}", lba);
         self.flash.borrow_mut()
             .read(lba * Self::BLOCK_BYTES as u32,block) 
             .map_err(|_| BlockDeviceError::HardwareError)?;
@@ -42,6 +43,7 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
+        defmt::info!("write_block {}", lba);
         self.flash.get_mut().erase_sectors(lba * Self::BLOCK_BYTES as u32, 1).ok();
         // write_bytes requires the argument to be mutable.  hence the copy
         let mut buffer = [0u8; FLASH_SECTOR_SIZE];
