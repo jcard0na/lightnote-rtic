@@ -81,7 +81,7 @@ impl From<DFUMemError> for FlashConfigError {
 impl FlashConfig {
     pub(crate) fn from_flash(flash: &mut SpiFlash) -> Result<Self, FlashConfigError> {
         let addr = CONFIG_SECTOR_ADDRESS + MAGIC_ID_OFFSET as u32;
-        let buf = flash.read(addr, CONFIG_SIZE)?;
+        // let buf = flash.read(addr, CONFIG_SIZE)?;
         let magic_id =
             u32::from_le_bytes(buf[MAGIC_ID_OFFSET..PAGE_SIZE_OFFSET].try_into().unwrap());
         if magic_id != 0x23571113 {

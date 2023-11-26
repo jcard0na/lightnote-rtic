@@ -5,7 +5,7 @@ use stm32l0xx_hal::{
     prelude::OutputPin,
 };
 
-use crate::config::FlashConfigError;
+// use crate::config::FlashConfigError;
 
 #[derive(Clone, Copy)]
 pub(super) enum LightNoteErrors {
@@ -21,17 +21,17 @@ pub(super) enum LightNoteErrors {
     FailedToReadFromFlash = 73,
 }
 
-impl From<FlashConfigError> for LightNoteErrors {
-    fn from(fc_error: FlashConfigError) -> Self {
-        match fc_error {
-            FlashConfigError::InvalidFlashConfigMagicId => {
-                LightNoteErrors::InvalidFlashConfigMagicId
-            }
-            FlashConfigError::InvalidQAType => LightNoteErrors::InvalidQAType,
-            FlashConfigError::FailedToReadFlash => LightNoteErrors::FailedToReadFromFlash,
-        }
-    }
-}
+// impl From<FlashConfigError> for LightNoteErrors {
+//     fn from(fc_error: FlashConfigError) -> Self {
+//         match fc_error {
+//             FlashConfigError::InvalidFlashConfigMagicId => {
+//                 LightNoteErrors::InvalidFlashConfigMagicId
+//             }
+//             FlashConfigError::InvalidQAType => LightNoteErrors::InvalidQAType,
+//             FlashConfigError::FailedToReadFlash => LightNoteErrors::FailedToReadFromFlash,
+//         }
+//     }
+// }
 
 #[allow(dead_code)]
 pub(super) fn raise(

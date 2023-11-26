@@ -5,8 +5,8 @@
 use panic_rtt_target as _;
 use defmt_rtt as _;
 
-mod config;
-mod display;
+// mod config;
+// mod display;
 mod errors;
 mod flash;
 mod nvm;
@@ -38,7 +38,7 @@ mod app {
 
     const USB_PACKET_SIZE: u16 = 64; // 8,16,32,64
     static mut USB_TRANSPORT_BUF: MaybeUninit<[u8; 512]> = MaybeUninit::uninit();
-    const BLOCK_SIZE: u32 = 512;
+    const BLOCK_SIZE: u32 = 4096;
     // this needs to match the size of disk.img
     const BLOCKS: u32 = 16;
     const MAX_LUN: u8 = 0; // max 0x0F
@@ -54,8 +54,8 @@ mod app {
 
     use super::*;
     use crate::{
-        config::{self, FlashConfig, QAType},
-        display::show_q_or_a,
+        // config::{self, FlashConfig, QAType},
+        // display::show_q_or_a,
         flash::SpiFlash,
         hal::{
             delay::Delay,
@@ -199,7 +199,7 @@ mod app {
         let mut epd =
             Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
         let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
-        let mut config = config::FlashConfig::from_flash(&mut flash);
+        // let mut config = config::FlashConfig::from_flash(&mut flash);
 
         let webusb = WebUsb::new(
             usb_bus.as_ref().unwrap(),
@@ -256,22 +256,22 @@ mod app {
         let temperature = sht.measure_temperature(PowerMode::NormalMode,  delay).unwrap();
 
         // XXX: Until we read it from flash
-        let config = FlashConfig {
-            page_size: 8192,
-            num_pages: 100,
-            q_type: config::QAType::RawImage,
-            a_type: QAType::Text,
-        };
-        show_q_or_a(
-            epd,
-            spi_epd,
-            High,
-            flash,
-            delay,
-            &config,
-            0x0000_0000,
-            false
-        ).ok();
+        // let config = FlashConfig {
+        //     page_size: 8192,
+        //     num_pages: 100,
+        //     q_type: config::QAType::RawImage,
+        //     a_type: QAType::Text,
+        // };
+        // show_q_or_a(
+        //     epd,
+        //     spi_epd,
+        //     High,
+        //     flash,
+        //     delay,
+        //     &config,
+        //     0x0000_0000,
+        //     false
+        // ).ok();
         defmt::info!("epd stuff here...");
         delay.delay_ms(1000u32);
     }
@@ -404,7 +404,7 @@ mod app {
 
                     // Uncomment this in order to push data in chunks smaller than a USB packet.
                     let end = core::cmp::min(start + USB_PACKET_SIZE as usize - 1, end);
-                    defmt::info!("Data transfer >>>>>>>> [{}..{}]", start, end);
+                    defmt::println!("Data transfer >>>>>>>> [{}..{}]", start, end);
                     let count = command.write_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
                 } else {
@@ -418,7 +418,7 @@ mod app {
                 if STATE.storage_offset != (len * BLOCK_SIZE) as usize {
                     let start = (BLOCK_SIZE * lba) as usize + STATE.storage_offset;
                     let end = (BLOCK_SIZE * lba) as usize + (BLOCK_SIZE * len) as usize;
-                    defmt::info!("Data transfer <<<<<<<< [{}..{}]", start, end);
+                    defmt::println!("Data transfer <<<<<<<< [{}..{}]", start, end);
                     let count = command.read_data(&mut STORAGE[start..end])?;
                     STATE.storage_offset += count;
 
