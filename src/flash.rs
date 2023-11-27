@@ -4,7 +4,10 @@ use core::cell::RefCell;
 use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 // use cortex_m_semihosting::hprintln;
 use shared_bus::{NullMutex, SpiProxy};
-use spi_memory::{series25::Flash, Read, BlockDevice as _};
+use spi_memory::{
+    series25::{Flash, Status},
+    BlockDevice as _, Read,
+};
 use stm32l0xx_hal::{
     delay::Delay,
     gpio::{
@@ -16,12 +19,9 @@ use stm32l0xx_hal::{
 
 use usbd_scsi::{BlockDevice, BlockDeviceError};
 
-use crate::{
-    errors::LightNoteErrors,
-    nvm,
-};
+use crate::{errors::LightNoteErrors, nvm};
 
-impl From<nvm::Error> for BlockDeviceError{
+impl From<nvm::Error> for BlockDeviceError {
     fn from(value: nvm::Error) -> Self {
         match value {
             nvm::Error::InvalidAddress => BlockDeviceError::InvalidAddress,
@@ -29,33 +29,112 @@ impl From<nvm::Error> for BlockDeviceError{
     }
 }
 
-const FLASH_SECTOR_SIZE: usize = 512;
+const FLASH_SECTOR_SIZE: usize = 4096;
 
 impl BlockDevice for SpiFlash<'_> {
-    const BLOCK_BYTES: usize = FLASH_SECTOR_SIZE;
+    // XXX: flash can only be erased in 4096 blocks, so we need
+    // to do something about this...
+    const BLOCK_BYTES: usize = 512;
 
     fn read_block(&self, lba: u32, block: &mut [u8]) -> Result<(), BlockDeviceError> {
-        defmt::info!("read_block {}", lba);
-        self.flash.borrow_mut()
-            .read(lba * Self::BLOCK_BYTES as u32,block) 
+        // defmt::info!("read_block {}", lba);
+        self.flash
+            .borrow_mut()
+            .read(lba * Self::BLOCK_BYTES as u32, block)
             .map_err(|_| BlockDeviceError::HardwareError)?;
         Ok(())
     }
 
+    // fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
+    //     // Each flash sector contains 8 512 blocks.  Find the offset into the sector
+    //     // that needs to be modified
+    //     let blocks_per_sector = FLASH_SECTOR_SIZE / Self::BLOCK_BYTES;
+    //     let offset = (lba % blocks_per_sector as u32) as usize;
+    //     let sector_start = (lba as usize - offset) * Self::BLOCK_BYTES;
+    //     defmt::info!("write_block {} offset 0x{:x} into sector starting at 0x{:x}", lba, offset, sector_start);
+
+    //     // read
+    //     let mut buffer = [0u8; FLASH_SECTOR_SIZE];
+    //     self.flash.get_mut()
+    //         .read(sector_start as u32,&mut buffer)
+    //         .map_err(|_| BlockDeviceError::HardwareError)?;
+
+    //     // erase
+    //     if let Err(e) = self.flash.get_mut().erase_sectors(sector_start as u32, 1) {
+    //         defmt::error!("flash write error");
+    //     }
+
+    //     if let Ok(status) = self.flash.get_mut().read_status() {
+    //         defmt::info!("3 flash busy: {}", status.contains(Status::BUSY));
+    //     };
+
+    //     // modify
+    //     buffer[(offset * Self::BLOCK_BYTES)..((offset + 1)*Self::BLOCK_BYTES)].copy_from_slice(block);
+
+    //     // write
+    //     self.flash.get_mut()
+    //         .write_bytes(sector_start as u32, &mut buffer)
+    //         .ok();
+
+    //     // verify
+    //     self.flash.get_mut()
+    //         .read(sector_start as u32,&mut buffer)
+    //         .map_err(|_| BlockDeviceError::HardwareError)?;
+
+    //     if &buffer[(offset * Self::BLOCK_BYTES)..((offset + 1)*Self::BLOCK_BYTES)]  != block {
+    //         defmt::info!("Verify failed for block 0x{:x}..0x{:x}", offset * Self::BLOCK_BYTES, (offset + 1)*Self::BLOCK_BYTES);
+    //     }
+    //     Ok(())
+    // }
+
     fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-        defmt::info!("write_block {}", lba);
-        self.flash.get_mut().erase_sectors(lba * Self::BLOCK_BYTES as u32, 1).ok();
-        // write_bytes requires the argument to be mutable.  hence the copy
-        let mut buffer = [0u8; FLASH_SECTOR_SIZE];
+        // Each flash sector contains 8 512 blocks.  Find the offset into the sector
+        // that needs to be modified
+        let blocks_per_sector = FLASH_SECTOR_SIZE / Self::BLOCK_BYTES;
+        let offset = (lba % blocks_per_sector as u32) as usize;
+        defmt::info!(
+            "write_block {} offset from sector start = 0x{:x}",
+            lba,
+            offset
+        );
+
+        // erase if at sector boundaries
+        if offset == 0 {
+            self.flash
+                .get_mut()
+                .erase_sectors(lba * Self::BLOCK_BYTES as u32, 1)
+                .ok();
+        }
+
+        // spi library needs a mutable buffer, hence the copy
+        let mut buffer = [0u8; Self::BLOCK_BYTES];
         buffer.copy_from_slice(block);
-        self.flash.get_mut()
+
+        // write
+        self.flash
+            .get_mut()
             .write_bytes(lba * Self::BLOCK_BYTES as u32, &mut buffer)
             .ok();
+
+        // verify
+        self.flash
+            .get_mut()
+            .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+            .map_err(|_| BlockDeviceError::HardwareError)?;
+
+        if &buffer != block {
+            defmt::error!(
+                "Verify failed for block 0x{:x}..0x{:x}",
+                offset * Self::BLOCK_BYTES,
+                (offset + 1) * Self::BLOCK_BYTES
+            );
+            return Err(BlockDeviceError::WriteError);
+        }
         Ok(())
     }
 
     fn max_lba(&self) -> u32 {
-       16 * 1024 * 1024 / Self::BLOCK_BYTES as u32
+        16 * 1024 * 1024 / Self::BLOCK_BYTES as u32 - 1
     }
 }
 
