@@ -14,7 +14,7 @@ use stm32l0xx_hal::{
         gpiob::{PB3, PB4, PB5, PB6},
         Output, PushPull,
     },
-    prelude::OutputPin,
+    prelude::OutputPin, aes::Block,
 };
 
 use usbd_scsi::{BlockDevice, BlockDeviceError};
@@ -44,13 +44,94 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
+        if lba == 0 {
+            self.flash.get_mut().erase_all().map_err(|_| BlockDeviceError::EraseError)?;
+        }
+        if self.is_block_erased(lba)? {
+            self.write_block_fast(lba, block)
+        } else {
+            self.write_block_slow(lba, block)
+        }
+    }
+
+    fn max_lba(&self) -> u32 {
+        16 * 1024 * 1024 / Self::BLOCK_BYTES as u32 - 1
+    }
+}
+
+impl<'a> SpiFlash<'a> {
+    // This is the size of a Lightnote page.  It corresponds to one
+    // display-worth of data (5000B) rounded up to the closest erase sector
+    // boundary (4094 * 2)
+    // const LIGHTNOTE_PAGE_SIZE: u32 = 0x2_000; // 8192
+
+    pub(crate) fn new(
+        spi_flash: SpiFlashMainType<'a>,
+        mut cs_flash: PB6<Output<PushPull>>,
+        delay: &mut Delay,
+    ) -> Self {
+        // Wiggle chip select seems to avoid Flash::init failures that occur in
+        // transient power losses in the middle of a memory read
+        cs_flash.set_high().unwrap();
+        delay.delay_ms(100u32);
+        cs_flash.set_low().unwrap();
+
+        let flash = Flash::init(spi_flash, cs_flash);
+        // if flash.is_err() {
+        //     errors::raise(
+        //         LightNoteErrors::FailedToInitializeFlash,
+        //         &mut led_grn,
+        //         &mut led_ylw,
+        //         &mut delay,
+        //     );
+        //     SCB::sys_reset();
+        // }
+        let flash = flash.unwrap();
+        SpiFlash {
+            flash: RefCell::new(flash),
+        }
+    }
+
+    fn is_block_erased(&mut self, lba: u32) -> Result<bool, BlockDeviceError> {
+        // read
+        let mut buffer = [0u8; FLASH_SECTOR_SIZE];
+        self.flash
+            .get_mut()
+            .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+            .map_err(|_| BlockDeviceError::HardwareError)?;
+        for v in buffer.iter() {
+            if *v != 0xff {
+                return Ok(false)
+            }
+        }
+        Ok(true)
+    }
+
+
+    // Assumes chip has been erased
+    fn write_block_fast(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
+        defmt::info!("write_block_fast {}", lba);
+
+        let mut buffer = [0u8; Self::BLOCK_BYTES];
+
+        buffer.copy_from_slice(block);
+
+        // write
+        self.flash
+            .get_mut()
+            .write_bytes(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+            .ok();
+        Ok(())
+    }
+
+    fn write_block_slow(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
         // Each flash sector contains 8 512 blocks.  Find the offset into the sector
         // that needs to be modified
         let blocks_per_sector = FLASH_SECTOR_SIZE / Self::BLOCK_BYTES;
         let offset = (lba % blocks_per_sector as u32) as usize;
         let sector_start = (lba as usize - offset) * Self::BLOCK_BYTES;
         defmt::info!(
-            "write_block {} offset 0x{:x} into sector starting at 0x{:x}",
+            "write_block_slow {} offset 0x{:x} into sector starting at 0x{:x}",
             lba,
             offset,
             sector_start
@@ -109,103 +190,6 @@ impl BlockDevice for SpiFlash<'_> {
         Ok(())
     }
 
-    // fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-    //     // Each flash sector contains 8 512 blocks.  Find the offset into the sector
-    //     // that needs to be modified
-    //     let blocks_per_sector = FLASH_SECTOR_SIZE / Self::BLOCK_BYTES;
-    //     let offset = (lba % blocks_per_sector as u32) as usize;
-
-    //     // erase if at sector boundaries
-    //     if offset == 0 {
-    //         defmt::info!(
-    //             "erase/write_block {} offset from sector start = 0x{:x}",
-    //             lba,
-    //             offset
-    //         );
-    //         self.flash
-    //             .get_mut()
-    //             .erase_sectors(lba * Self::BLOCK_BYTES as u32, 1)
-    //             .map_err(|_| BlockDeviceError::EraseError)?;
-    //     } else {
-    //         defmt::info!(
-    //             "write_block {} offset from sector start = 0x{:x}",
-    //             lba,
-    //             offset
-    //         );
-    //     }
-
-    //     for _ in 0..50_000 {
-    //         self.check_flash_id()
-    //             .map_err(|_| BlockDeviceError::HardwareError)?;
-    //     }
-
-    //     // spi library needs a mutable buffer, hence the copy
-    //     let mut buffer = [0u8; Self::BLOCK_BYTES];
-    //     buffer.copy_from_slice(block);
-    //     assert!(&buffer == block);
-
-    //     for i in 0..5 {
-    //         // write
-    //         self.flash
-    //             .get_mut()
-    //             .write_bytes(lba * Self::BLOCK_BYTES as u32, &mut buffer)
-    //             .map_err(|_| BlockDeviceError::WriteError)?;
-
-    //         // verify
-    //         self.flash
-    //             .get_mut()
-    //             .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
-    //             .map_err(|_| BlockDeviceError::HardwareError)?;
-
-    //         if &buffer != block {
-    //             defmt::error!(
-    //                 "Verify failed for block 0x{:x}..0x{:x} try:{}/4",
-    //                 offset * Self::BLOCK_BYTES,
-    //                 (offset + 1) * Self::BLOCK_BYTES,
-    //                 i
-    //             );
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
-    fn max_lba(&self) -> u32 {
-        16 * 1024 * 1024 / Self::BLOCK_BYTES as u32 - 1
-    }
-}
-
-impl<'a> SpiFlash<'a> {
-    // This is the size of a Lightnote page.  It corresponds to one
-    // display-worth of data (5000B) rounded up to the closest erase sector
-    // boundary (4094 * 2)
-    // const LIGHTNOTE_PAGE_SIZE: u32 = 0x2_000; // 8192
-
-    pub(crate) fn new(
-        spi_flash: SpiFlashMainType<'a>,
-        mut cs_flash: PB6<Output<PushPull>>,
-        delay: &mut Delay,
-    ) -> Self {
-        // Wiggle chip select seems to avoid Flash::init failures that occur in
-        // transient power losses in the middle of a memory read
-        cs_flash.set_high().unwrap();
-        delay.delay_ms(100u32);
-        cs_flash.set_low().unwrap();
-
-        let flash = Flash::init(spi_flash, cs_flash);
-        // if flash.is_err() {
-        //     errors::raise(
-        //         LightNoteErrors::FailedToInitializeFlash,
-        //         &mut led_grn,
-        //         &mut led_ylw,
-        //         &mut delay,
-        //     );
-        //     SCB::sys_reset();
-        // }
-        let flash = flash.unwrap();
-        SpiFlash {
-            flash: RefCell::new(flash),
-        }
-    }
 
     // pub(crate) fn sleep(self: &mut Self) {
     //     self.flash.sleep().unwrap();
