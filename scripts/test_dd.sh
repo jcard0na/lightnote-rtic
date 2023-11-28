@@ -1,7 +1,19 @@
-COUNT=8
+#! /bin/bash
+#
+#COUNT=32768
+COUNT=4
 BLOCK_SIZE=512
-sudo dd if=/dev/urandom of=/tmp/tin.img count=${COUNT} bs=${BLOCK_SIZE}
-sudo sg_dd blk_sgio=1 if=/tmp/tin.img of=/dev/sde count=${COUNT} bs=${BLOCK_SIZE}
-sudo sg_dd blk_sgio=1 if=/dev/sde of=/tmp/tout.img count=${COUNT} bs=${BLOCK_SIZE}
-diff /tmp/tin.img /tmp/tout.img || { echo FAIL; exit 1; }
+SKIP_COUNT=8
+[ -z "$1" ] && { echo "usage: $0 </dev/sdX>"; exit 1; }
+DEVICE=$1
+I=/tmp/tin.img
+O1=/tmp/tout1.img
+O2=/tmp/tout2.img
+sudo rm -f $I $O1
+sudo dd if=/dev/urandom of=$I count=${COUNT} bs=${BLOCK_SIZE}
+sudo sg_dd blk_sgio=1 if=$I of=${DEVICE} count=${COUNT} bs=${BLOCK_SIZE} seek=${SKIP_COUNT}
+sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O1 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT}
+sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O2 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT}
+diff $I $O1 || { ./bindiff.sh $I $O2; echo FAIL; exit 1; }
+diff $I $O2 || { ./bindiff.sh $O1 $O2; echo FAIL; exit 1; }
 echo PASS
