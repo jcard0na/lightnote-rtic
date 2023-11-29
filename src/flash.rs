@@ -14,7 +14,7 @@ use stm32l0xx_hal::{
         gpiob::{PB3, PB4, PB5, PB6},
         Output, PushPull,
     },
-    prelude::OutputPin, aes::Block,
+    prelude::OutputPin,
 };
 
 use usbd_scsi::{BlockDevice, BlockDeviceError};
@@ -44,14 +44,40 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-        if lba == 0 {
-            self.flash.get_mut().erase_all().map_err(|_| BlockDeviceError::EraseError)?;
-        }
         if self.is_block_erased(lba)? {
             self.write_block_fast(lba, block)
         } else {
             self.write_block_slow(lba, block)
         }
+    }
+
+    fn erase_device(&mut self) -> Result<(), BlockDeviceError> {
+        defmt::info!("erase (order 66)");
+        self.flash.get_mut().erase_all().map_err(|_| BlockDeviceError::EraseError)?;
+        defmt::info!("status: {:X}", self
+            .flash
+            .get_mut()
+            .read_status()
+            .map_err(|_| BlockDeviceError::HardwareError)?
+            .bits());
+        for _ in 0..5 {
+            while self
+                .flash
+                .get_mut()
+                .read_status()
+                .map_err(|_| BlockDeviceError::HardwareError)?
+                .contains(Status::BUSY)
+            {
+                defmt::info!("status: {:X}", self
+                    .flash
+                    .get_mut()
+                    .read_status()
+                    .map_err(|_| BlockDeviceError::HardwareError)?
+                    .bits());
+            }
+        }
+        defmt::info!("erase (order 66) done");
+        Ok(())
     }
 
     fn max_lba(&self) -> u32 {
@@ -154,7 +180,7 @@ impl<'a> SpiFlash<'a> {
         // This spi memory seems to clear the BUSY bit too soon.  We need additional
         // non-BUSY reads before writing to a sector or we'll get corrupted writes.
         // This check should probably be moved to the spi-memory driver.
-        for _ in 0..10 {
+        for _ in 0..5 {
             while self
                 .flash
                 .get_mut()
