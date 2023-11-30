@@ -9,7 +9,7 @@ DEVICE=$1
 I=/tmp/tin.img
 O1=/tmp/tout1.img
 O2=/tmp/tout2.img
-sudo rm -f $I $O1
+sudo rm -f $I $O1 $O2
 sudo dd if=/dev/urandom of=$I count=${COUNT} bs=${BLOCK_SIZE}
 sudo sg_dd blk_sgio=1 if=$I of=${DEVICE} count=${COUNT} bs=${BLOCK_SIZE} seek=${SKIP_COUNT}
 sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O1 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT}

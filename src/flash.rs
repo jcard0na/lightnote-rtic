@@ -4,9 +4,8 @@ use core::cell::RefCell;
 use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
 // use cortex_m_semihosting::hprintln;
 use shared_bus::{NullMutex, SpiProxy};
-use spi_memory::{
-    series25::{Flash, Status},
-    BlockDevice as _, Read,
+use w25q::{
+    series25::Flash,
 };
 use stm32l0xx_hal::{
     delay::Delay,
@@ -52,31 +51,7 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn erase_device(&mut self) -> Result<(), BlockDeviceError> {
-        defmt::info!("erase (order 66)");
         self.flash.get_mut().erase_all().map_err(|_| BlockDeviceError::EraseError)?;
-        defmt::info!("status: {:X}", self
-            .flash
-            .get_mut()
-            .read_status()
-            .map_err(|_| BlockDeviceError::HardwareError)?
-            .bits());
-        for _ in 0..5 {
-            while self
-                .flash
-                .get_mut()
-                .read_status()
-                .map_err(|_| BlockDeviceError::HardwareError)?
-                .contains(Status::BUSY)
-            {
-                defmt::info!("status: {:X}", self
-                    .flash
-                    .get_mut()
-                    .read_status()
-                    .map_err(|_| BlockDeviceError::HardwareError)?
-                    .bits());
-            }
-        }
-        defmt::info!("erase (order 66) done");
         Ok(())
     }
 
@@ -176,20 +151,6 @@ impl<'a> SpiFlash<'a> {
             .erase_sectors(sector_start as u32, 1)
             .map_err(|_| BlockDeviceError::EraseError)?;
 
-        // HACK
-        // This spi memory seems to clear the BUSY bit too soon.  We need additional
-        // non-BUSY reads before writing to a sector or we'll get corrupted writes.
-        // This check should probably be moved to the spi-memory driver.
-        for _ in 0..5 {
-            while self
-                .flash
-                .get_mut()
-                .read_status()
-                .map_err(|_| BlockDeviceError::HardwareError)?
-                .contains(Status::BUSY)
-            {}
-        }
-
         // modify
         buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)]
             .copy_from_slice(block);
@@ -207,7 +168,7 @@ impl<'a> SpiFlash<'a> {
             .map_err(|_| BlockDeviceError::HardwareError)?;
 
         if &buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)] != block {
-            defmt::info!(
+            defmt::error!(
                 "Verify failed for block 0x{:x}..0x{:x}",
                 offset * Self::BLOCK_BYTES,
                 (offset + 1) * Self::BLOCK_BYTES

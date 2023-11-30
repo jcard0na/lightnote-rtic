@@ -36,6 +36,10 @@ usbd-storage = { version = "0.1.0", features = ["bbb", "scsi", "defmt"] }
 usbd-webusb = "1.0.2"
 #usbd_scsi = { version = "0.1.0" }
 usbd_scsi = { path = "../stm32-usb.rs/firmware/usbd_scsi", features=["trace-scsi-fs"] }
+w25q = "0.2.9"
+
+[patch.crates-io]
+w25q = { path = "../spi-memory" }
 
 [build-dependencies]
 vergen = { version = "8.0.0", features = ["build", "git", "gitcl"] }
