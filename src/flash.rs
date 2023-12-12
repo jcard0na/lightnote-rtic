@@ -95,7 +95,7 @@ impl<'a> SpiFlash<'a> {
 
     fn is_block_erased(&mut self, lba: u32) -> Result<bool, BlockDeviceError> {
         // read
-        let mut buffer = [0u8; FLASH_SECTOR_SIZE];
+        let mut buffer = [0u8; Self::BLOCK_BYTES];
         self.flash
             .get_mut()
             .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
