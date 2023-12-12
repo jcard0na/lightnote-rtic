@@ -93,7 +93,6 @@ mod app {
         prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
     };
     use usbd_scsi::Scsi;
-    use usbd_webusb::{url_scheme, WebUsb};
 
     type BusMgrInner = NullMutex<
         Spi<
@@ -126,7 +125,6 @@ mod app {
         sht: ShtCx<Sht2Gen, &'static CommonBus<I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>>>,
         spi_epd: SpiProxy<'static, BusMgrInner>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
-        webusb: WebUsb<UsbBus<USB>>,
     }
 
     const MSG_Q_CAPACITY: usize = 1;
@@ -197,12 +195,6 @@ mod app {
         let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
         // let mut config = config::FlashConfig::from_flash(&mut flash);
 
-        let webusb = WebUsb::new(
-            usb_bus.as_ref().unwrap(),
-            url_scheme::HTTPS,
-            "cardonabits.github.io/lightnote-app/",
-        );
-
         let scsi: Scsi<'_, UsbBus<USB>, SpiFlash<'_>> = Scsi::new(
             usb_bus.as_ref().unwrap(),
             USB_PACKET_SIZE,
@@ -232,7 +224,6 @@ mod app {
                 sht,
                 spi_epd,
                 usb_dev,
-                webusb,
             },
         )
     }
@@ -272,14 +263,14 @@ mod app {
         delay.delay_ms(1000u32);
     }
 
-    #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev, webusb])]
+    #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev])]
     fn usb_handler(cx: usb_handler::Context) {
 
         let led = cx.local.led_b;
         led.toggle().ok();
 
         let usb_dev = cx.local.usb_dev;
-        usb_dev.poll(&mut [cx.local.webusb, cx.local.scsi]);
+        usb_dev.poll(&mut [cx.local.scsi]);
     }
 
     static mut THIS_DEVICE_ID: [u8; 12] = [0u8; 12];
