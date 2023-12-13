@@ -14,45 +14,11 @@ mod voltage;
 
 use stm32l0xx_hal as hal;
 
-#[derive(Default)]
-struct State {
-    storage_offset: usize,
-    sense_key: Option<u8>,
-    sense_key_code: Option<u8>,
-    sense_qualifier: Option<u8>,
-}
-
-impl State {
-    fn reset(&mut self) {
-        self.storage_offset = 0;
-        self.sense_key = None;
-        self.sense_key_code = None;
-        self.sense_qualifier = None;
-    }
-}
-
 #[rtic::app(device = stm32l0xx_hal::pac, dispatchers = [RTC])]
 mod app {
 
-    use core::mem::MaybeUninit;
-
     const USB_PACKET_SIZE: u16 = 64; // 8,16,32,64
-    static mut USB_TRANSPORT_BUF: MaybeUninit<[u8; 512]> = MaybeUninit::uninit();
-    const BLOCK_SIZE: u32 = 512;
-    // this needs to match the size of disk.img
-    const BLOCKS: u32 = 16;
-    const MAX_LUN: u8 = 0; // max 0x0F
-    // XXX: This is the actual file content.  It needs to be replaced by flash
-    static mut STORAGE: [u8; 8192] = *include_bytes!("disk.img");
 
-    static mut STATE: State = State {
-        storage_offset: 0,
-        sense_key: None,
-        sense_key_code: None,
-        sense_qualifier: None,
-    };
-
-    use super::*;
     use crate::{
         // config::{self, FlashConfig, QAType},
         // display::show_q_or_a,
