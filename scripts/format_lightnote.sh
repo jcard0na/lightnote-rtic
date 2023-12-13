@@ -8,7 +8,7 @@ set -x
 
 DEVICE=$1
 FLASH_SIZE=$((16 * 1024 * 1024 ))
-LBA_SIZE=512
+LBA_SIZE=1024
 FLASH_SIZE_LBA=$(( FLASH_SIZE / LBA_SIZE))
 
 dd if=/dev/zero of=disk.img bs=${LBA_SIZE} count=$((FLASH_SIZE_LBA)) &> /dev/null

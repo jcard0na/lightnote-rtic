@@ -1,8 +1,8 @@
 #! /bin/bash
 #
 #COUNT=32768
-COUNT=10
-BLOCK_SIZE=512
+COUNT=8
+BLOCK_SIZE=1024
 SKIP_COUNT=8
 [ -z "$1" ] && { echo "usage: $0 </dev/sdX>"; exit 1; }
 DEVICE=$1

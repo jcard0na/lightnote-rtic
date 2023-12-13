@@ -31,7 +31,7 @@ impl From<nvm::Error> for BlockDeviceError {
 const FLASH_SECTOR_SIZE: usize = 4096;
 
 impl BlockDevice for SpiFlash<'_> {
-    const BLOCK_BYTES: usize = 512;
+    const BLOCK_BYTES: usize = 1024;
 
     fn read_block(&mut self, lba: u32, block: &mut [u8]) -> Result<(), BlockDeviceError> {
         // defmt::info!("read_block {}", lba);
@@ -111,7 +111,7 @@ impl<'a> SpiFlash<'a> {
 
     // Assumes chip has been erased
     fn write_block_fast(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-        defmt::info!("write_block_fast {}", lba);
+        defmt::info!("write_block_fast {}, block size: {}", lba, block.len());
 
         // write
         self.flash
