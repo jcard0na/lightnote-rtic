@@ -113,14 +113,10 @@ impl<'a> SpiFlash<'a> {
     fn write_block_fast(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
         defmt::info!("write_block_fast {}", lba);
 
-        let mut buffer = [0u8; Self::BLOCK_BYTES];
-
-        buffer.copy_from_slice(block);
-
         // write
         self.flash
             .get_mut()
-            .write_bytes(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+            .write_bytes(lba * Self::BLOCK_BYTES as u32, block)
             .ok();
         Ok(())
     }
