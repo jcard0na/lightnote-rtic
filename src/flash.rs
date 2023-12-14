@@ -13,7 +13,7 @@ use w25q::series25::Flash;
 
 use usbd_scsi::{BlockDevice, BlockDeviceError};
 
-use crate::{errors::LightNoteErrors, nvm};
+use crate::{errors::LightNoteErrors, nvm::{self, Nvm}};
 
 impl From<nvm::Error> for BlockDeviceError {
     fn from(value: nvm::Error) -> Self {
@@ -38,11 +38,12 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn write_block(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-        if self.is_block_erased(lba)? {
-            self.write_block_fast(lba, block)
+        if self.nvm.read_sector_is_erased(lba)? {
+            self.write_block_fast(lba, block)?;
         } else {
-            self.write_block_slow(lba, block)
+            self.write_block_slow(lba, block)?;
         }
+        self.nvm.save_sector_is_erased(lba, false).map_err(|e| e.into())
     }
 
     fn erase_device(&mut self) -> Result<(), BlockDeviceError> {
@@ -50,7 +51,7 @@ impl BlockDevice for SpiFlash<'_> {
             .get_mut()
             .erase_all()
             .map_err(|_| BlockDeviceError::EraseError)?;
-        Ok(())
+        self.nvm.save_all_sectors_erased().map_err(|e| e.into())
     }
 
     fn max_lba(&self) -> u32 {
@@ -59,14 +60,10 @@ impl BlockDevice for SpiFlash<'_> {
 }
 
 impl<'a> SpiFlash<'a> {
-    // This is the size of a Lightnote page.  It corresponds to one
-    // display-worth of data (5000B) rounded up to the closest erase sector
-    // boundary (4094 * 2)
-    // const LIGHTNOTE_PAGE_SIZE: u32 = 0x2_000; // 8192
-
     pub(crate) fn new(
         spi_flash: SpiFlashMainType<'a>,
         mut cs_flash: PB6<Output<PushPull>>,
+        mut nvm: Nvm,
         delay: &mut Delay,
     ) -> Self {
         // Wiggle chip select seems to avoid Flash::init failures that occur in
@@ -88,6 +85,7 @@ impl<'a> SpiFlash<'a> {
         let flash = flash.unwrap();
         SpiFlash {
             flash: RefCell::new(flash),
+            nvm,
         }
     }
 
@@ -178,4 +176,5 @@ type SpiFlashWithCsType<'a> =
 
 pub struct SpiFlash<'a> {
     flash: RefCell<SpiFlashWithCsType<'a>>,
+    nvm: Nvm,
 }

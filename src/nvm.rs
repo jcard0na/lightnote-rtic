@@ -1,7 +1,7 @@
 use core::ptr;
 use int_enum::IntEnum;
 use stm32l0xx_hal::{
-    flash::{EEPROM_START_BANK1, FLASH},
+    flash::{EEPROM_START_BANK1, EEPROM_START_BANK2, FLASH},
     pac,
     rcc::Rcc,
 };
@@ -15,6 +15,9 @@ enum NvmVariableNames {
     DisplayAddress = 0xc,
     AnswerPending = 0x10,
 }
+
+const FLASH_NUM_SECTORS: u32 = 4096;
+const FLASH_ERASED_SECTORS_MAP: usize = EEPROM_START_BANK2;
 
 pub enum Error {
     InvalidAddress,
@@ -123,6 +126,50 @@ impl Nvm {
             ptr::copy(address, buf.as_mut_ptr() as *mut u8, length);
         }
 
+        Ok(())
+    }
+
+    pub(crate) fn read_sector_is_erased(self: &Self, sector: u32) -> Result<bool, Error> {
+        if sector > FLASH_NUM_SECTORS {
+            return Err(Error::InvalidAddress);
+        }
+        let address = (FLASH_ERASED_SECTORS_MAP + sector as usize / 8) as *mut u8;
+        let val = unsafe { *address };
+        let bit = sector % 8;
+        let is_set = (val & (1 << bit)) != 0;
+        Ok(is_set)
+    }
+
+    pub(crate) fn save_sector_is_erased(
+        self: &mut Self,
+        sector: u32,
+        is_erased: bool,
+    ) -> Result<(), Error> {
+        if sector > FLASH_NUM_SECTORS {
+            return Err(Error::InvalidAddress);
+        }
+        let address = (FLASH_ERASED_SECTORS_MAP + sector as usize / 8) as *mut u8;
+        let val = unsafe { *address };
+        let bit = sector % 8;
+        let new_val;
+        if is_erased {
+            new_val = val | (1 << bit);
+        } else {
+            new_val = val & !(1 << bit);
+        }
+        self.nvm
+            .write_byte(address, new_val)
+            .expect("Failed to write to EEPROM");
+        Ok(())
+    }
+
+    pub(crate) fn save_all_sectors_erased(self: &mut Self) -> Result<(), Error> {
+        let address = FLASH_ERASED_SECTORS_MAP as *mut u32;
+        for _ in (0..FLASH_NUM_SECTORS / 8).step_by(4) {
+            self.nvm
+                .write_word(address, 0xffffffff)
+                .expect("Failed to write to EEPROM");
+        }
         Ok(())
     }
 }

@@ -39,6 +39,7 @@ mod app {
             syscfg::SYSCFG,
             usb::{UsbBus, USB},
         },
+        nvm::Nvm,
         voltage::VoltageLevels::High,
     };
     use epd_waveshare::{
@@ -105,6 +106,7 @@ mod app {
         let mut rcc = p.RCC.freeze(Config::hsi16());
         let mut syscfg = SYSCFG::new(p.SYSCFG, &mut rcc);
         let hsi48 = rcc.enable_hsi48(&mut syscfg, p.CRS);
+        let mut nvm = Nvm::new(p.FLASH, &mut rcc);
 
         // gpioa
         let gpioa = p.GPIOA.split(&mut rcc);
@@ -162,7 +164,9 @@ mod app {
         defmt::info!("Setup EPD...");
         let mut epd =
             Epd1in54::new(&mut spi_epd, cs_epd, busy_in, dc, rst, &mut delay, None).unwrap();
-        let mut flash = SpiFlash::new(spi_flash, cs_flash, &mut delay);
+
+        // TODO: flash will take ownership of nvm.  Need to see how to share it.
+        let mut flash = SpiFlash::new(spi_flash, cs_flash, nvm, &mut delay);
         // let mut config = config::FlashConfig::from_flash(&mut flash);
 
         let scsi: Scsi<'_, UsbBus<USB>, SpiFlash<'_>> = Scsi::new(
