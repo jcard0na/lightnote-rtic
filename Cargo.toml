@@ -26,7 +26,7 @@ shtcx = "0.11.0"
 spi-memory = "0.2.0"
 stm32l0xx-hal = { version = "0.10.0", features = ["stm32-usbd", "mcu-STM32L072CBTx", "rt"]}
 usb-device = { version = "0.2.9", features = ["control-buffer-256"] }
-usbd_scsi = { path = "../stm32-usb.rs/firmware/usbd_scsi", features=["trace-scsi-fs"] }
+usbd_scsi = { path = "../stm32-usb.rs/firmware/usbd_scsi", features=["trace-scsi-fs", "trace-scsi-command"] }
 w25q = "0.2.9"
 
 [patch.crates-io]

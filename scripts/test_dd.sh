@@ -2,7 +2,7 @@
 #
 #COUNT=32768
 COUNT=8
-BLOCK_SIZE=1024
+BLOCK_SIZE=4096
 SKIP_COUNT=8
 [ -z "$1" ] && { echo "usage: $0 </dev/sdX>"; exit 1; }
 DEVICE=$1
@@ -11,6 +11,10 @@ O1=/tmp/tout1.img
 O2=/tmp/tout2.img
 sudo rm -f $I $O1 $O2
 sudo dd if=/dev/urandom of=$I count=${COUNT} bs=${BLOCK_SIZE}
+
+# To write all ones instead of random
+#tr '\0' '\377' < /dev/zero | sudo dd of=$I count=${COUNT} bs=${BLOCK_SIZE}
+
 sudo sg_dd blk_sgio=1 if=$I of=${DEVICE} count=${COUNT} bs=${BLOCK_SIZE} seek=${SKIP_COUNT} --progress
 sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O1 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress
 sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O2 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress

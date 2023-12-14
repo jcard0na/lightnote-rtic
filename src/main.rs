@@ -2,8 +2,8 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use panic_rtt_target as _;
 use defmt_rtt as _;
+use panic_rtt_target as _;
 
 // mod config;
 // mod display;
@@ -28,10 +28,10 @@ mod app {
             gpio::{
                 gpioa::PA8,
                 gpiob::{PB0, PB1, PB2, PB3, PB4, PB5, PB7, PB8, PB9},
-                Output, PushPull, OpenDrain,
+                OpenDrain, Output, PushPull,
             },
             i2c::I2c,
-            pac::{I2C1},
+            pac::I2C1,
             prelude::*,
             rcc::Config,
             signature::device_id,
@@ -46,14 +46,14 @@ mod app {
         prelude::*,
     };
     use hex_display::HexDisplayExt;
-    use lps22hb::interface::{I2cInterface, i2c::I2cAddress};
+    use lps22hb::interface::{i2c::I2cAddress, I2cInterface};
     use lps22hb::*;
     use rtic_sync::channel::Receiver;
     use rtic_sync::{channel::*, make_channel};
     // XXX: This should be replaced by shared_bus_rtic
     use shared_bus::{BusManager, NullMutex, SpiProxy};
     use shared_bus_rtic::CommonBus;
-    use shtcx::{sensor_class::Sht2Gen, shtc3, ShtCx, PowerMode};
+    use shtcx::{sensor_class::Sht2Gen, shtc3, PowerMode, ShtCx};
     use usb_device::{
         bus::UsbBusAllocator,
         prelude::{UsbDevice, UsbDeviceBuilder, UsbVidPid},
@@ -87,8 +87,11 @@ mod app {
             stm32l0xx_hal::delay::Delay,
         >,
         led_b: PA8<Output<PushPull>>,
-        scsi: Scsi<'static, UsbBus<USB>, SpiFlash<'static>>, 
-        sht: ShtCx<Sht2Gen, &'static CommonBus<I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>>>,
+        scsi: Scsi<'static, UsbBus<USB>, SpiFlash<'static>>,
+        sht: ShtCx<
+            Sht2Gen,
+            &'static CommonBus<I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>>,
+        >,
         spi_epd: SpiProxy<'static, BusMgrInner>,
         usb_dev: UsbDevice<'static, UsbBus<USB>>,
     }
@@ -138,19 +141,20 @@ mod app {
         let spi_flash = spi_bus.as_ref().unwrap().acquire_spi();
 
         defmt::info!("Setup I2C...");
-        // let i2c = p.I2C1.i2c(sda, scl, 100_000.Hz(), &mut rcc); 
-        let i2c = I2c::new(p.I2C1, sda, scl, 100_000.Hz(), &mut rcc); 
-        let i2c_manager = shared_bus_rtic::new!(i2c,I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>);
+        // let i2c = p.I2C1.i2c(sda, scl, 100_000.Hz(), &mut rcc);
+        let i2c = I2c::new(p.I2C1, sda, scl, 100_000.Hz(), &mut rcc);
+        let i2c_manager =
+            shared_bus_rtic::new!(i2c,I2c<I2C1, PB9<Output<OpenDrain>>, PB8<Output<OpenDrain>>>);
 
         let mut sht = shtc3(i2c_manager.acquire());
         // let i2c_interface = I2cInterface::init(i2c_manager.acquire(), I2cAddress::SA0_VCC);
         // let mut lps22hb = LPS22HB::new(i2c_interface);
 
         // lps22hb.one_shot().unwrap();
-        
+
         // // read temperature and pressure
-        
-        // let temp = lps22hb.read_temperature().unwrap();                    
+
+        // let temp = lps22hb.read_temperature().unwrap();
         // let press = lps22hb.read_pressure().unwrap();
         // let id = lps22hb.get_device_id().unwrap();
 
@@ -167,7 +171,7 @@ mod app {
             flash,
             "CardBits",
             "Lightnote",
-            "1.0"
+            "1.0",
         );
 
         let usb_dev = UsbDeviceBuilder::new(usb_bus.as_ref().unwrap(), UsbVidPid(0xf055, 0xdf11))
@@ -206,7 +210,9 @@ mod app {
         // let flash = cx.local.flash;
 
         let sht = cx.local.sht;
-        let temperature = sht.measure_temperature(PowerMode::NormalMode,  delay).unwrap();
+        let temperature = sht
+            .measure_temperature(PowerMode::NormalMode, delay)
+            .unwrap();
 
         // XXX: Until we read it from flash
         // let config = FlashConfig {
@@ -231,7 +237,6 @@ mod app {
 
     #[task(binds = USB, priority = 2, local = [led_b, scsi, usb_dev])]
     fn usb_handler(cx: usb_handler::Context) {
-
         let led = cx.local.led_b;
         led.toggle().ok();
 

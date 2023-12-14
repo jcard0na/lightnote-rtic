@@ -1,12 +1,6 @@
 use core::cell::RefCell;
-
-// use core::sync::atomic::AtomicU32;
 use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
-// use cortex_m_semihosting::hprintln;
 use shared_bus::{NullMutex, SpiProxy};
-use w25q::{
-    series25::Flash,
-};
 use stm32l0xx_hal::{
     delay::Delay,
     gpio::{
@@ -15,6 +9,7 @@ use stm32l0xx_hal::{
     },
     prelude::OutputPin,
 };
+use w25q::series25::Flash;
 
 use usbd_scsi::{BlockDevice, BlockDeviceError};
 
@@ -31,7 +26,7 @@ impl From<nvm::Error> for BlockDeviceError {
 const FLASH_SECTOR_SIZE: usize = 4096;
 
 impl BlockDevice for SpiFlash<'_> {
-    const BLOCK_BYTES: usize = 1024;
+    const BLOCK_BYTES: usize = FLASH_SECTOR_SIZE;
 
     fn read_block(&mut self, lba: u32, block: &mut [u8]) -> Result<(), BlockDeviceError> {
         // defmt::info!("read_block {}", lba);
@@ -51,7 +46,10 @@ impl BlockDevice for SpiFlash<'_> {
     }
 
     fn erase_device(&mut self) -> Result<(), BlockDeviceError> {
-        self.flash.get_mut().erase_all().map_err(|_| BlockDeviceError::EraseError)?;
+        self.flash
+            .get_mut()
+            .erase_all()
+            .map_err(|_| BlockDeviceError::EraseError)?;
         Ok(())
     }
 
@@ -94,20 +92,20 @@ impl<'a> SpiFlash<'a> {
     }
 
     fn is_block_erased(&mut self, lba: u32) -> Result<bool, BlockDeviceError> {
-        // read
-        let mut buffer = [0u8; Self::BLOCK_BYTES];
-        self.flash
-            .get_mut()
-            .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
-            .map_err(|_| BlockDeviceError::HardwareError)?;
-        for v in buffer.iter() {
-            if *v != 0xff {
-                return Ok(false)
+        const READ_CHUNK_SIZE: usize = 4;
+        let mut buffer = [0u8; READ_CHUNK_SIZE];
+        let mut is_erased = true;
+        let flash = self.flash.get_mut();
+        for chunk in 0..FLASH_SECTOR_SIZE / READ_CHUNK_SIZE {
+            flash
+                .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+                .map_err(|_| BlockDeviceError::HardwareError)?;
+            if buffer != [0xff; READ_CHUNK_SIZE] {
+                return Ok(false);
             }
         }
         Ok(true)
     }
-
 
     // Assumes chip has been erased
     fn write_block_fast(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
@@ -135,11 +133,11 @@ impl<'a> SpiFlash<'a> {
         );
 
         // read
-        let mut buffer = [0u8; FLASH_SECTOR_SIZE];
-        self.flash
-            .get_mut()
-            .read(sector_start as u32, &mut buffer)
-            .map_err(|_| BlockDeviceError::HardwareError)?;
+        // let mut buffer = [0u8; FLASH_SECTOR_SIZE];
+        // self.flash
+        //     .get_mut()
+        //     .read(sector_start as u32, &mut buffer)
+        //     .map_err(|_| BlockDeviceError::HardwareError)?;
 
         // erase
         self.flash
@@ -148,31 +146,30 @@ impl<'a> SpiFlash<'a> {
             .map_err(|_| BlockDeviceError::EraseError)?;
 
         // modify
-        buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)]
-            .copy_from_slice(block);
+        // buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)]
+        //     .copy_from_slice(block);
 
         // write
         self.flash
             .get_mut()
-            .write_bytes(sector_start as u32, &mut buffer)
+            .write_bytes(sector_start as u32, &block)
             .ok();
 
-        // verify
-        self.flash
-            .get_mut()
-            .read(sector_start as u32, &mut buffer)
-            .map_err(|_| BlockDeviceError::HardwareError)?;
+        // // verify
+        // self.flash
+        //     .get_mut()
+        //     .read(sector_start as u32, &mut buffer)
+        //     .map_err(|_| BlockDeviceError::HardwareError)?;
 
-        if &buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)] != block {
-            defmt::error!(
-                "Verify failed for block 0x{:x}..0x{:x}",
-                offset * Self::BLOCK_BYTES,
-                (offset + 1) * Self::BLOCK_BYTES
-            );
-        }
+        // if &buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)] != block {
+        //     defmt::error!(
+        //         "Verify failed for block 0x{:x}..0x{:x}",
+        //         offset * Self::BLOCK_BYTES,
+        //         (offset + 1) * Self::BLOCK_BYTES
+        //     );
+        // }
         Ok(())
     }
-
 
     // pub(crate) fn sleep(self: &mut Self) {
     //     self.flash.sleep().unwrap();
