@@ -137,6 +137,13 @@ impl Nvm {
         let val = unsafe { *address };
         let bit = sector % 8;
         let is_set = (val & (1 << bit)) != 0;
+        // defmt::info!(
+        //     "sector {} at map addr 0x{:X} val: 0x{:X} is_set: {}",
+        //     sector,
+        //     address,
+        //     val,
+        //     is_set
+        // );
         Ok(is_set)
     }
 
@@ -157,6 +164,13 @@ impl Nvm {
         } else {
             new_val = val & !(1 << bit);
         }
+        // defmt::info!(
+        //     "sector {} at map addr 0x{:X} val: 0x{:X} new_val: {:X}",
+        //     sector,
+        //     address,
+        //     val,
+        //     new_val
+        // );
         self.nvm
             .write_byte(address, new_val)
             .expect("Failed to write to EEPROM");
@@ -165,9 +179,11 @@ impl Nvm {
 
     pub(crate) fn save_all_sectors_erased(self: &mut Self) -> Result<(), Error> {
         let address = FLASH_ERASED_SECTORS_MAP as *mut u32;
-        for _ in (0..FLASH_NUM_SECTORS / 8).step_by(4) {
+        for i in 0..FLASH_NUM_SECTORS / (4 * 8) {
+            let address = address.wrapping_add(i as usize);
+            // defmt::info!("erase sectors at map addr 0x{:X}", address);
             self.nvm
-                .write_word(address, 0xffffffff)
+                .write_word(address, 0xffff_ffff)
                 .expect("Failed to write to EEPROM");
         }
         Ok(())
