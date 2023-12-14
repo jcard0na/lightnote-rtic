@@ -92,13 +92,14 @@ impl<'a> SpiFlash<'a> {
     }
 
     fn is_block_erased(&mut self, lba: u32) -> Result<bool, BlockDeviceError> {
+        // Note: Be mindful of stack usage by keeping this value small
         const READ_CHUNK_SIZE: usize = 4;
         let mut buffer = [0u8; READ_CHUNK_SIZE];
-        let mut is_erased = true;
         let flash = self.flash.get_mut();
-        for chunk in 0..FLASH_SECTOR_SIZE / READ_CHUNK_SIZE {
+        let block_bytes: u32 = Self::BLOCK_BYTES.try_into().unwrap();
+        for chunk in (0..FLASH_SECTOR_SIZE).step_by(READ_CHUNK_SIZE) {
             flash
-                .read(lba * Self::BLOCK_BYTES as u32, &mut buffer)
+                .read(lba * block_bytes + chunk as u32, &mut buffer)
                 .map_err(|_| BlockDeviceError::HardwareError)?;
             if buffer != [0xff; READ_CHUNK_SIZE] {
                 return Ok(false);
@@ -107,7 +108,7 @@ impl<'a> SpiFlash<'a> {
         Ok(true)
     }
 
-    // Assumes chip has been erased
+    // Write only (Assumes chip has been erased already)
     fn write_block_fast(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
         defmt::info!("write_block_fast {}, block size: {}", lba, block.len());
 
@@ -119,55 +120,25 @@ impl<'a> SpiFlash<'a> {
         Ok(())
     }
 
+    // Erase + write
     fn write_block_slow(&mut self, lba: u32, block: &[u8]) -> Result<(), BlockDeviceError> {
-        // Each flash sector contains 8 512 blocks.  Find the offset into the sector
-        // that needs to be modified
-        let blocks_per_sector = FLASH_SECTOR_SIZE / Self::BLOCK_BYTES;
-        let offset = (lba % blocks_per_sector as u32) as usize;
-        let sector_start = (lba as usize - offset) * Self::BLOCK_BYTES;
-        defmt::info!(
-            "write_block_slow {} offset 0x{:x} into sector starting at 0x{:x}",
-            lba,
-            offset,
-            sector_start
-        );
 
-        // read
-        // let mut buffer = [0u8; FLASH_SECTOR_SIZE];
-        // self.flash
-        //     .get_mut()
-        //     .read(sector_start as u32, &mut buffer)
-        //     .map_err(|_| BlockDeviceError::HardwareError)?;
-
+        defmt::info!("write_block_slow {}", lba);
+        if block.len() != FLASH_SECTOR_SIZE {
+            return Err(BlockDeviceError::WriteError);
+        }
         // erase
         self.flash
             .get_mut()
-            .erase_sectors(sector_start as u32, 1)
+            .erase_sectors(lba * Self::BLOCK_BYTES as u32, 1)
             .map_err(|_| BlockDeviceError::EraseError)?;
-
-        // modify
-        // buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)]
-        //     .copy_from_slice(block);
 
         // write
         self.flash
             .get_mut()
-            .write_bytes(sector_start as u32, &block)
+            .write_bytes(lba * Self::BLOCK_BYTES as u32, &block)
             .ok();
 
-        // // verify
-        // self.flash
-        //     .get_mut()
-        //     .read(sector_start as u32, &mut buffer)
-        //     .map_err(|_| BlockDeviceError::HardwareError)?;
-
-        // if &buffer[(offset * Self::BLOCK_BYTES)..((offset + 1) * Self::BLOCK_BYTES)] != block {
-        //     defmt::error!(
-        //         "Verify failed for block 0x{:x}..0x{:x}",
-        //         offset * Self::BLOCK_BYTES,
-        //         (offset + 1) * Self::BLOCK_BYTES
-        //     );
-        // }
         Ok(())
     }
 

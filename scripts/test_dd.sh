@@ -15,9 +15,9 @@ sudo dd if=/dev/urandom of=$I count=${COUNT} bs=${BLOCK_SIZE}
 # To write all ones instead of random
 #tr '\0' '\377' < /dev/zero | sudo dd of=$I count=${COUNT} bs=${BLOCK_SIZE}
 
-sudo sg_dd blk_sgio=1 if=$I of=${DEVICE} count=${COUNT} bs=${BLOCK_SIZE} seek=${SKIP_COUNT} --progress
-sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O1 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress
-sudo sg_dd blk_sgio=1 if=${DEVICE} of=$O2 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress
+sudo sg_dd bpt=30 blk_sgio=1 if=$I of=${DEVICE} count=${COUNT} bs=${BLOCK_SIZE} seek=${SKIP_COUNT} --progress
+sudo sg_dd bpt=30 blk_sgio=1 if=${DEVICE} of=$O1 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress
+sudo sg_dd bpt=30 blk_sgio=1 if=${DEVICE} of=$O2 count=${COUNT} bs=${BLOCK_SIZE} skip=${SKIP_COUNT} --progress
 diff $I $O1 || { ./bindiff.sh $I $O2; echo FAIL; exit 1; }
 diff $I $O2 || { ./bindiff.sh $O1 $O2; echo FAIL; exit 1; }
 echo PASS
